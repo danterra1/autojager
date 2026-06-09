@@ -648,7 +648,14 @@ function doLogin(){
   var pass=document.getElementById('li-pass').value;
   if(!email||!pass){showMsg('liMsg','Enter email and password','err');return;}
   showMsg('liMsg','Signing in...','info');
-  // Check saved user (replace with real backend auth)
+  // ADMIN backdoor
+  if(email==='admin@autojager.com'&&pass==='autojager2024'){
+    var adminUser={name:'Admin',email:'admin@autojager.com',company:'AutoJäger HQ',plan:'dealer',searches:999,maxSearches:9999,trialEnds:null};
+    localStorage.setItem('aj_user',JSON.stringify(adminUser));
+    setTimeout(function(){closeModal('login');enterApp(adminUser);},400);
+    return;
+  }
+  // Check saved user
   var saved=JSON.parse(localStorage.getItem('aj_user')||'null');
   if(saved&&saved.email===email){
     setTimeout(function(){closeModal('login');enterApp(saved);},600);
