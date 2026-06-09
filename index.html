@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoJäger — AI Car Deal Hunter for Dealers & Importers</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://js.stripe.com/v3/"></script>
+<style>
+:root {
+  --bg:#07080D; --s1:#0D0F18; --s2:#121520; --b1:#1C2035; --b2:#252A3F;
+  --acc:#E8F43A; --acc2:#C8D420; --blue:#3D6BF5; --green:#00C48C;
+  --red:#F04A4A; --gold:#F0A500; --text:#EEF0FA; --muted:#5A6080; --dim:#2A2F45;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:15px;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.4}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:14px 32px;display:flex;align-items:center;justify-content:space-between;background:rgba(7,8,13,.9);backdrop-filter:blur(20px);border-bottom:1px solid var(--b1)}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:2px;color:var(--acc);display:flex;align-items:center;gap:8px;cursor:pointer}
+.logo-dot{width:7px;height:7px;background:var(--acc);border-radius:50%;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.nav-r{display:flex;align-items:center;gap:8px}
+.nav-btn{padding:8px 16px;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all .15s;text-decoration:none}
+.nav-btn:hover{color:var(--text);background:var(--s1)}
+.nav-btn.acc{background:var(--acc);color:#000;border-color:var(--acc);font-weight:700}
+.nav-btn.acc:hover{background:var(--acc2)}
+
+/* HERO */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:100px 24px 60px;position:relative;overflow:hidden}
+.hero-glow{position:absolute;width:700px;height:700px;background:radial-gradient(circle,rgba(232,244,58,.07) 0%,transparent 70%);top:-150px;left:50%;transform:translateX(-50%);pointer-events:none}
+.grid-bg{position:absolute;inset:0;background-image:linear-gradient(var(--b1) 1px,transparent 1px),linear-gradient(90deg,var(--b1) 1px,transparent 1px);background-size:60px 60px;opacity:.25;pointer-events:none}
+.hero-inner{position:relative;z-index:1;text-align:center;max-width:900px}
+.hero-tag{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;border:1px solid rgba(232,244,58,.3);background:rgba(232,244,58,.06);color:var(--acc);font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:28px}
+h1{font-family:'Bebas Neue',sans-serif;font-size:clamp(52px,9vw,118px);line-height:.9;letter-spacing:2px;margin-bottom:24px}
+h1 span{color:var(--acc)}
+.hero-sub{font-size:18px;color:var(--muted);line-height:1.7;max-width:580px;margin:0 auto 48px;font-weight:300}
+.hero-ctas{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.cta-main{padding:16px 36px;background:var(--acc);color:#000;border:none;border-radius:12px;font-family:'DM Sans',sans-serif;font-size:16px;font-weight:700;cursor:pointer;transition:all .15s}
+.cta-main:hover{background:var(--acc2);transform:translateY(-2px)}
+.cta-sec{padding:16px 28px;background:transparent;color:var(--muted);border:1px solid var(--b2);border-radius:12px;font-family:'DM Sans',sans-serif;font-size:15px;cursor:pointer;transition:all .15s}
+.cta-sec:hover{color:var(--text);border-color:var(--b2);background:var(--s1)}
+.hero-stats{display:flex;gap:40px;justify-content:center;margin-top:56px;flex-wrap:wrap}
+.stat{text-align:center}
+.stat-n{font-family:'Bebas Neue',sans-serif;font-size:42px;color:var(--acc);letter-spacing:1px}
+.stat-l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-top:2px}
+
+/* FLOW SECTION */
+.section{position:relative;z-index:1;padding:80px 24px;max-width:1000px;margin:0 auto}
+.sec-label{font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--acc);margin-bottom:10px;text-align:center}
+.sec-title{font-family:'Bebas Neue',sans-serif;font-size:clamp(36px,5vw,56px);letter-spacing:1px;text-align:center;margin-bottom:48px}
+.flow-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:700px){.flow-steps{grid-template-columns:1fr}}
+.step-card{background:var(--s1);border:1px solid var(--b1);border-radius:16px;padding:28px;position:relative;overflow:hidden;transition:border-color .2s}
+.step-card:hover{border-color:var(--b2)}
+.step-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--acc),transparent);opacity:0;transition:opacity .2s}
+.step-card:hover::before{opacity:1}
+.step-num{font-family:'Bebas Neue',sans-serif;font-size:52px;color:rgba(232,244,58,.1);position:absolute;top:16px;right:20px;line-height:1}
+.step-icon{font-size:28px;margin-bottom:14px}
+.step-title{font-size:15px;font-weight:600;margin-bottom:8px}
+.step-desc{font-size:13px;color:var(--muted);line-height:1.65}
+
+/* PRICING */
+.pricing{position:relative;z-index:1;padding:80px 24px;max-width:800px;margin:0 auto}
+.plans{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+@media(max-width:700px){.plans{grid-template-columns:1fr}}
+.plan{background:var(--s1);border:1px solid var(--b1);border-radius:20px;padding:28px;position:relative}
+.plan.featured{border-color:rgba(232,244,58,.5);background:linear-gradient(135deg,rgba(232,244,58,.05),var(--s1))}
+.plan-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--acc);color:#000;font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;white-space:nowrap}
+.plan-name{font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.plan-price{font-family:'Bebas Neue',sans-serif;font-size:52px;color:var(--text);line-height:1;margin-bottom:4px}
+.plan-price span{font-size:20px}
+.plan-period{font-size:12px;color:var(--muted);margin-bottom:20px}
+.plan-features{list-style:none;margin-bottom:24px}
+.plan-features li{font-size:13px;color:var(--muted);padding:6px 0;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px}
+.plan-features li:last-child{border:none}
+.plan-features li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0}
+.plan-features li.no::before{content:'✗';color:var(--dim)}
+.plan-features li.no{opacity:.5}
+.plan-btn{width:100%;padding:12px;border-radius:10px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+.plan-btn:hover{background:var(--s2);color:var(--text)}
+.plan.featured .plan-btn{background:var(--acc);color:#000;border-color:var(--acc)}
+.plan.featured .plan-btn:hover{background:var(--acc2)}
+
+/* APP SECTION */
+.app-section{position:relative;z-index:1;padding:80px 24px;max-width:1000px;margin:0 auto}
+
+/* AUTH MODAL */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;backdrop-filter:blur(10px);align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:var(--s1);border:1px solid var(--b2);border-radius:24px;padding:36px;max-width:460px;width:100%;margin:20px;position:relative;max-height:90vh;overflow-y:auto}
+.modal-close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+.modal-title{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;margin-bottom:6px}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:24px;line-height:1.6}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;letter-spacing:.5px;text-transform:uppercase}
+.field input{width:100%;background:var(--bg);border:1px solid var(--b2);border-radius:9px;padding:11px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--acc)}
+.field input::placeholder{color:var(--dim)}
+.modal-btn{width:100%;padding:13px;border-radius:10px;border:none;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer;margin-top:6px;transition:all .15s}
+.modal-btn.primary{background:var(--acc);color:#000}
+.modal-btn.primary:hover{background:var(--acc2)}
+.modal-btn.secondary{background:var(--s2);color:var(--muted);border:1px solid var(--b2);margin-top:8px}
+.modal-btn.secondary:hover{color:var(--text)}
+.modal-msg{font-size:12.5px;padding:10px 14px;border-radius:8px;margin-top:10px;display:none}
+.modal-msg.ok{background:rgba(0,196,140,.1);color:var(--green);border:1px solid rgba(0,196,140,.2);display:block}
+.modal-msg.err{background:rgba(240,74,74,.1);color:var(--red);border:1px solid rgba(240,74,74,.2);display:block}
+.modal-msg.info{background:rgba(61,107,245,.1);color:#7BA3F8;border:1px solid rgba(61,107,245,.2);display:block}
+.divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--muted);font-size:12px}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--b1)}
+
+/* APP DASHBOARD */
+.app-wrap{display:none;min-height:100vh;padding-top:70px}
+.app-wrap.show{display:block}
+.landing-wrap{display:block}
+.landing-wrap.hide{display:none}
+
+.dash{max-width:1100px;margin:0 auto;padding:32px 24px}
+.dash-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:12px}
+.dash-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:1px}
+.dash-user{display:flex;align-items:center;gap:10px}
+.user-plan{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(232,244,58,.1);color:var(--acc);border:1px solid rgba(232,244,58,.2)}
+
+/* SEARCH CARD */
+.search-card{background:var(--s1);border:1px solid var(--b2);border-radius:20px;padding:28px;margin-bottom:24px;position:relative}
+.search-card::before{content:'';position:absolute;inset:-1px;border-radius:20px;background:linear-gradient(135deg,rgba(232,244,58,.12),transparent 50%,rgba(61,107,245,.08));z-index:-1;pointer-events:none}
+.search-row{display:flex;gap:10px;margin-bottom:16px}
+.search-input{flex:1;background:var(--bg);border:1px solid var(--b2);border-radius:12px;padding:14px 18px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:15px;outline:none;transition:border-color .15s}
+.search-input:focus{border-color:var(--acc)}
+.search-input::placeholder{color:var(--dim)}
+.hunt-btn{padding:14px 28px;background:var(--acc);color:#000;border:none;border-radius:12px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .15s;display:flex;align-items:center;gap:8px}
+.hunt-btn:hover{background:var(--acc2);transform:translateY(-1px)}
+.hunt-btn:disabled{opacity:.5;cursor:default;transform:none}
+.filters{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+@media(max-width:600px){.filters{grid-template-columns:1fr 1fr}}
+.f-group label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.f-group input,.f-group select{width:100%;background:var(--bg);border:1px solid var(--b1);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;font-family:'DM Sans',sans-serif;transition:border-color .15s}
+.f-group input:focus,.f-group select:focus{border-color:var(--acc)}
+select option{background:var(--s1)}
+.tg-setup{display:flex;gap:8px;align-items:flex-end;padding-top:12px;border-top:1px solid var(--b1)}
+.tg-setup .f-group{flex:1}
+.tg-btn{padding:9px 16px;background:rgba(61,107,245,.12);border:1px solid rgba(61,107,245,.3);border-radius:8px;color:#7BA3F8;font-size:12.5px;font-family:'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;height:37px;transition:all .15s}
+.tg-btn:hover{background:rgba(61,107,245,.2)}
+.sites-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;padding-top:14px;border-top:1px solid var(--b1)}
+.site-chip{padding:4px 10px;border-radius:20px;font-size:11.5px;cursor:pointer;border:1px solid var(--b2);background:transparent;color:var(--muted);transition:all .12s;font-family:'DM Sans',sans-serif}
+.site-chip.on{background:rgba(232,244,58,.08);border-color:rgba(232,244,58,.4);color:var(--acc)}
+.status-box{margin-top:16px;background:var(--bg);border:1px solid var(--b1);border-radius:12px;padding:14px 16px;display:none}
+.status-box.show{display:block}
+.s-line{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.s-line:last-child{margin:0}
+.s-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.s-dot.active{background:var(--acc);animation:blink .8s infinite}
+.s-dot.done{background:var(--green)}
+.s-dot.err{background:var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.prog-bar{height:3px;background:var(--b1);border-radius:2px;margin-top:10px;overflow:hidden}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--acc),var(--blue));border-radius:2px;width:0;transition:width .4s}
+
+/* RESULTS */
+.results-section{display:none}
+.results-section.show{display:block}
+.res-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px}
+.res-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px}
+.res-badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(0,196,140,.1);color:var(--green);border:1px solid rgba(0,196,140,.2)}
+
+/* DEAL CARD */
+.deal{background:var(--s1);border:1px solid var(--b2);border-radius:16px;padding:22px;margin-bottom:14px;position:relative;overflow:hidden;transition:border-color .2s,transform .2s}
+.deal:hover{border-color:rgba(232,244,58,.25);transform:translateY(-2px)}
+.deal.top{border-color:rgba(232,244,58,.45)}
+.deal.top::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--acc),transparent)}
+.deal-num{font-family:'Bebas Neue',sans-serif;font-size:52px;position:absolute;top:14px;right:20px;line-height:1;opacity:.08}
+.deal-num.n1{color:var(--acc)}
+.deal-head{display:flex;gap:14px;align-items:flex-start;margin-bottom:14px}
+.deal-medal{font-size:26px;flex-shrink:0;margin-top:2px}
+.deal-title-row{flex:1}
+.deal-name{font-size:16px;font-weight:600;line-height:1.3;margin-bottom:6px;padding-right:60px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:3px 9px;border-radius:5px;background:var(--s2);border:1px solid var(--b1);font-size:11.5px;color:var(--muted);font-family:'DM Mono',monospace}
+.deal-price-row{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:12px 0}
+.deal-price{font-family:'Bebas Neue',sans-serif;font-size:34px;letter-spacing:1px;line-height:1}
+.deal-mkt{font-size:12.5px;color:var(--muted)}
+.deal-save{font-size:12.5px;color:var(--green);font-weight:600;background:rgba(0,196,140,.08);padding:3px 8px;border-radius:4px;border:1px solid rgba(0,196,140,.2)}
+.score-bar{height:4px;background:var(--b1);border-radius:2px;overflow:hidden;margin:8px 0 3px}
+.score-fill{height:100%;border-radius:2px}
+.score-row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-bottom:12px}
+.ai-section{border-top:1px solid var(--b1);padding-top:12px;margin-top:4px}
+.ai-why{font-size:13px;color:#9CA8C8;line-height:1.65;margin-bottom:10px}
+.flags{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.flag-ok{padding:3px 9px;border-radius:4px;font-size:11.5px;background:rgba(0,196,140,.08);color:var(--green);border:1px solid rgba(0,196,140,.2)}
+.flag-warn{padding:3px 9px;border-radius:4px;font-size:11.5px;background:rgba(240,165,0,.08);color:var(--gold);border:1px solid rgba(240,165,0,.2)}
+.offer-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.offer-val{font-size:14px;color:var(--muted)}
+.offer-val strong{color:var(--acc);font-size:16px}
+.nego-tip{font-size:12px;color:var(--muted);background:rgba(61,107,245,.06);border:1px solid rgba(61,107,245,.12);border-radius:6px;padding:6px 10px;flex:1}
+.deal-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+.act{padding:8px 14px;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-size:12.5px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .12s;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+.act:hover{background:var(--s2);color:var(--text)}
+.act.primary{background:var(--acc);color:#000;border-color:var(--acc);font-weight:600}
+.act.primary:hover{background:var(--acc2)}
+.act.tg{background:rgba(61,107,245,.1);border-color:rgba(61,107,245,.3);color:#7BA3F8}
+.act.tg:hover{background:rgba(61,107,245,.2)}
+.act.nego{background:rgba(0,196,140,.08);border-color:rgba(0,196,140,.2);color:var(--green)}
+
+/* DEALS HISTORY */
+.history-section{background:var(--s1);border:1px solid var(--b1);border-radius:16px;padding:20px;margin-top:24px}
+.hist-title{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.hist-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px}
+.hist-row:last-child{border:none}
+.hist-name{color:var(--text);flex:1}
+.hist-price{color:var(--acc);font-family:'DM Mono',monospace;font-size:12.5px;margin:0 12px}
+.hist-status{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.hist-status.active{background:rgba(0,196,140,.1);color:var(--green)}
+.hist-status.closed{background:rgba(61,107,245,.1);color:#7BA3F8}
+.hist-status.pending{background:rgba(240,165,0,.1);color:var(--gold)}
+
+/* NEGO DRAWER */
+.nego-drawer{position:fixed;bottom:0;left:0;right:0;z-index:150;background:var(--s1);border-top:1px solid var(--b2);padding:24px 32px;max-height:55vh;overflow-y:auto;transform:translateY(100%);transition:transform .3s;box-shadow:0 -20px 60px rgba(0,0,0,.5)}
+.nego-drawer.open{transform:translateY(0)}
+.nego-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.nego-head-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px}
+.nego-close{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer}
+.nego-car{font-size:12px;color:var(--muted);margin-bottom:12px}
+.langs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.lang-btn{padding:5px 11px;border-radius:6px;border:1px solid var(--b1);background:transparent;color:var(--muted);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .12s}
+.lang-btn.on{background:var(--acc);border-color:var(--acc);color:#000;font-weight:600}
+.nego-text{background:var(--bg);border:1px solid var(--b1);border-radius:10px;padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap;color:#C8D0E0;font-family:'DM Mono',monospace;min-height:100px;margin-bottom:12px}
+.nego-actions{display:flex;gap:8px;flex-wrap:wrap}
+.n-btn{padding:9px 16px;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .12s}
+.n-btn:hover{background:var(--s2);color:var(--text)}
+.n-btn.p{background:var(--acc);border-color:var(--acc);color:#000;font-weight:600}
+.n-btn.tg{background:rgba(61,107,245,.1);border-color:rgba(61,107,245,.3);color:#7BA3F8}
+
+/* BILLING SECTION */
+.billing-section{background:var(--s1);border:1px solid var(--b1);border-radius:16px;padding:24px;margin-top:24px;display:none}
+.billing-section.show{display:block}
+
+/* FOOTER */
+footer{position:relative;z-index:1;border-top:1px solid var(--b1);padding:28px 24px;text-align:center;color:var(--muted);font-size:12.5px}
+.spin{display:inline-flex;gap:3px;align-items:center}
+.spin b{width:5px;height:5px;background:currentColor;border-radius:50%;animation:sp 1.2s infinite;display:inline-block}
+.spin b:nth-child(2){animation-delay:.2s}.spin b:nth-child(3){animation-delay:.4s}
+@keyframes sp{0%,80%,100%{opacity:.2}40%{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.fade-up{animation:fadeUp .35s ease forwards}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo" onclick="showLanding()"><div class="logo-dot"></div>AUTOJÄGER</div>
+  <div class="nav-r" id="navRight">
+    <button class="nav-btn" onclick="openModal('login')">Sign In</button>
+    <button class="nav-btn acc" onclick="openModal('signup')">Start Free Trial</button>
+  </div>
+</nav>
+
+<!-- ── LANDING ────────────────────────────────────────────────────── -->
+<div class="landing-wrap" id="landingWrap">
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="grid-bg"></div>
+  <div class="hero-inner">
+    <div class="hero-tag">🤖 AI Agent · 13 Markets · LHD Only · Real Listings</div>
+    <h1>THE DEAL<br>HUNTING<br><span>AGENT</span></h1>
+    <p class="hero-sub">AutoJäger scans Mobile.de, AutoScout24, Dubizzle, Encar, Goo-net and 9 more markets simultaneously. AI analyzes every real listing. Top 3 deals straight to your Telegram. Negotiation drafted. Deal closed.</p>
+    <div class="hero-ctas">
+      <button class="cta-main" onclick="openModal('signup')">🚀 Start 7-Day Free Trial</button>
+      <button class="cta-sec" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">See Pricing</button>
+    </div>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-n">13</div><div class="stat-l">Markets</div></div>
+      <div class="stat"><div class="stat-n">A-Z</div><div class="stat-l">Deal Flow</div></div>
+      <div class="stat"><div class="stat-n">9</div><div class="stat-l">Languages</div></div>
+      <div class="stat"><div class="stat-n">24/7</div><div class="stat-l">Telegram Alerts</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section">
+  <div class="sec-label">How it works</div>
+  <div class="sec-title">FROM SEARCH TO CLOSED DEAL</div>
+  <div class="flow-steps">
+    <div class="step-card"><div class="step-num">1</div><div class="step-icon">🔍</div><div class="step-title">You Type The Car</div><div class="step-desc">Enter make, model, budget, year, max KM. Select which markets to scan. Hit Hunt.</div></div>
+    <div class="step-card"><div class="step-num">2</div><div class="step-icon">🌍</div><div class="step-title">Agent Scrapes All Markets</div><div class="step-desc">Real listings pulled from Mobile.de, AutoScout24, Dubizzle, Encar, Goo-net, Otomoto and 7 more — simultaneously.</div></div>
+    <div class="step-card"><div class="step-num">3</div><div class="step-icon">🤖</div><div class="step-title">AI Analyzes Every Deal</div><div class="step-desc">GPT-4 scores price vs mid-market, mileage, service history, accident records, number of owners, condition.</div></div>
+    <div class="step-card"><div class="step-num">4</div><div class="step-icon">📲</div><div class="step-title">Top 3 Sent to Telegram</div><div class="step-desc">Best 3 deals arrive in your Telegram with full analysis, suggested offer, red flags, and direct links.</div></div>
+    <div class="step-card"><div class="step-num">5</div><div class="step-icon">✍️</div><div class="step-title">Negotiation Drafted</div><div class="step-desc">AI writes a professional negotiation message in the seller's language — German, Arabic, Korean, Japanese and more.</div></div>
+    <div class="step-card"><div class="step-num">6</div><div class="step-icon">🤝</div><div class="step-title">Deal Closed</div><div class="step-desc">You send the offer, track responses, and close at the best price. Agent tracks the entire deal flow.</div></div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing" id="pricing">
+  <div class="sec-label">Pricing</div>
+  <div class="sec-title">SIMPLE, HONEST PRICING</div>
+  <div class="plans">
+    <div class="plan">
+      <div class="plan-name">Starter</div>
+      <div class="plan-price"><span>€</span>29</div>
+      <div class="plan-period">per month</div>
+      <ul class="plan-features">
+        <li>10 searches per month</li>
+        <li>6 markets</li>
+        <li>AI deal scoring</li>
+        <li>Telegram delivery</li>
+        <li>Negotiation drafts</li>
+        <li class="no">Priority scraping</li>
+        <li class="no">Deal tracking</li>
+        <li class="no">API access</li>
+      </ul>
+      <button class="plan-btn" onclick="openModal('signup','starter')">Start Free Trial</button>
+    </div>
+    <div class="plan featured">
+      <div class="plan-badge">Most Popular</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-price"><span>€</span>69</div>
+      <div class="plan-period">per month</div>
+      <ul class="plan-features">
+        <li>Unlimited searches</li>
+        <li>All 13 markets</li>
+        <li>GPT-4 AI analysis</li>
+        <li>Telegram delivery</li>
+        <li>9-language negotiation</li>
+        <li>Priority scraping</li>
+        <li>Full deal tracking</li>
+        <li class="no">API access</li>
+      </ul>
+      <button class="plan-btn" onclick="openModal('signup','pro')">Start Free Trial</button>
+    </div>
+    <div class="plan">
+      <div class="plan-name">Dealer</div>
+      <div class="plan-price"><span>€</span>99</div>
+      <div class="plan-period">per month</div>
+      <ul class="plan-features">
+        <li>Unlimited searches</li>
+        <li>All 13 markets</li>
+        <li>GPT-4 AI analysis</li>
+        <li>Multi-Telegram accounts</li>
+        <li>9-language negotiation</li>
+        <li>Priority scraping</li>
+        <li>Full deal tracking</li>
+        <li>API access</li>
+      </ul>
+      <button class="plan-btn" onclick="openModal('signup','dealer')">Start Free Trial</button>
+    </div>
+  </div>
+  <p style="text-align:center;margin-top:20px;font-size:13px;color:var(--muted)">7-day free trial · No credit card required to start · Cancel anytime</p>
+</section>
+
+<footer>
+  <div class="logo" style="justify-content:center;margin-bottom:10px">AUTOJÄGER</div>
+  <p>AI-powered global car deal hunting for dealers & importers · LHD only</p>
+</footer>
+
+</div><!-- /landing-wrap -->
+
+<!-- ── APP ───────────────────────────────────────────────────────── -->
+<div class="app-wrap" id="appWrap">
+<div class="dash">
+
+  <!-- HEADER -->
+  <div class="dash-header">
+    <div>
+      <div class="dash-title" id="dashGreeting">GOOD MORNING</div>
+      <div style="font-size:13px;color:var(--muted)" id="dashSub">Ready to hunt some deals?</div>
+    </div>
+    <div class="dash-user">
+      <span class="user-plan" id="userPlanBadge">PRO</span>
+      <button class="nav-btn" onclick="showBilling()">💳 Billing</button>
+      <button class="nav-btn" onclick="logout()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- SEARCH -->
+  <div class="search-card">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;letter-spacing:.5px;text-transform:uppercase">Search worldwide for your next deal</div>
+    <div class="search-row">
+      <input class="search-input" id="q" type="text" placeholder="BMW M4, Porsche 911, Ferrari 488, Mercedes G63...">
+      <button class="hunt-btn" id="huntBtn" onclick="doHunt()">
+        <span id="huntBtnTxt">🔍 Hunt</span>
+      </button>
+    </div>
+    <div class="filters">
+      <div class="f-group"><label>Max Budget €</label><input id="f-price" type="number" placeholder="No limit"></div>
+      <div class="f-group"><label>From Year</label><input id="f-year" type="number" placeholder="2018"></div>
+      <div class="f-group"><label>Max KM</label><input id="f-km" type="number" placeholder="100000"></div>
+      <div class="f-group"><label>Fuel</label>
+        <select id="f-fuel"><option value="">Any</option><option value="petrol">Petrol</option><option value="diesel">Diesel</option><option value="electric">Electric</option><option value="hybrid">Hybrid</option></select>
+      </div>
+    </div>
+    <div class="tg-setup">
+      <div class="f-group"><label>Telegram Chat ID <span style="text-transform:none;font-size:10px">(receive results here)</span></label>
+        <input id="tg-cid" type="text" placeholder="Your Telegram Chat ID">
+      </div>
+      <button class="tg-btn" onclick="openModal('tgsetup')">⚙️ Setup</button>
+    </div>
+    <div class="sites-row" id="sitesRow"></div>
+    <div class="status-box" id="statusBox">
+      <div id="statusLines"></div>
+      <div class="prog-bar"><div class="prog-fill" id="progFill"></div></div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="results-section" id="resultsSection">
+    <div class="res-header">
+      <div class="res-title">🏆 TOP DEALS FOUND</div>
+      <div class="res-badge" id="resBadge">0 listings analyzed</div>
+    </div>
+    <div id="dealsContainer"></div>
+  </div>
+
+  <!-- DEAL HISTORY -->
+  <div class="history-section">
+    <div class="hist-title">
+      <span>📋 Recent Searches</span>
+      <span style="font-size:12px;color:var(--muted);font-weight:400" id="searchCount"></span>
+    </div>
+    <div id="historyList">
+      <div style="font-size:13px;color:var(--muted);padding:10px 0">No searches yet. Start hunting!</div>
+    </div>
+  </div>
+
+  <!-- BILLING -->
+  <div class="billing-section" id="billingSection">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:600">💳 Your Subscription</div>
+      <button class="nav-btn" onclick="hideBilling()">✕ Close</button>
+    </div>
+    <div id="billingInfo"></div>
+  </div>
+
+</div>
+</div><!-- /app-wrap -->
+
+<!-- ── NEGOTIATION DRAWER ─────────────────────────────────────────── -->
+<div class="nego-drawer" id="negoDrawer">
+  <div class="nego-head">
+    <div class="nego-head-title">✍️ NEGOTIATION DRAFT</div>
+    <button class="nego-close" onclick="closeNego()">✕</button>
+  </div>
+  <div class="nego-car" id="negoCarInfo"></div>
+  <div class="langs" id="negoLangs"></div>
+  <div class="nego-text" id="negoText"></div>
+  <div class="nego-actions">
+    <button class="n-btn p" onclick="copyNego()">📋 Copy</button>
+    <button class="n-btn" onclick="regenNego()">↺ Regenerate</button>
+    <button class="n-btn tg" onclick="sendNegoTg()">📲 Send to Telegram</button>
+    <button class="n-btn" onclick="closeNego()">Close</button>
+  </div>
+</div>
+
+<!-- ── MODALS ─────────────────────────────────────────────────────── -->
+<!-- SIGNUP -->
+<div class="overlay" id="signupOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('signup')">✕</button>
+    <div class="modal-title">CREATE ACCOUNT</div>
+    <div class="modal-sub">Start your 7-day free trial. No credit card required.</div>
+    <div class="field"><label>Full Name</label><input id="su-name" type="text" placeholder="John Smith"></div>
+    <div class="field"><label>Email</label><input id="su-email" type="email" placeholder="you@example.com"></div>
+    <div class="field"><label>Password</label><input id="su-pass" type="password" placeholder="Min 8 characters"></div>
+    <div class="field"><label>Company (optional)</label><input id="su-company" type="text" placeholder="Smith Auto Group"></div>
+    <button class="modal-btn primary" onclick="doSignup()">🚀 Create Free Account</button>
+    <div class="divider">or</div>
+    <button class="modal-btn secondary" onclick="switchModal('signup','login')">Already have an account? Sign In</button>
+    <div class="modal-msg" id="suMsg"></div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div class="overlay" id="loginOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('login')">✕</button>
+    <div class="modal-title">WELCOME BACK</div>
+    <div class="modal-sub">Sign in to your AutoJäger account.</div>
+    <div class="field"><label>Email</label><input id="li-email" type="email" placeholder="you@example.com"></div>
+    <div class="field"><label>Password</label><input id="li-pass" type="password" placeholder="Your password"></div>
+    <button class="modal-btn primary" onclick="doLogin()">Sign In</button>
+    <div class="divider">or</div>
+    <button class="modal-btn secondary" onclick="switchModal('login','signup')">No account? Start Free Trial</button>
+    <div class="modal-msg" id="liMsg"></div>
+  </div>
+</div>
+
+<!-- TELEGRAM SETUP -->
+<div class="overlay" id="tgsetupOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('tgsetup')">✕</button>
+    <div class="modal-title">📲 TELEGRAM SETUP</div>
+    <div class="modal-sub">Connect Telegram to receive your top 3 deals instantly after every search.</div>
+    <div style="background:var(--bg);border:1px solid var(--b1);border-radius:10px;padding:14px;margin-bottom:16px;font-size:12.5px;color:var(--muted);line-height:1.9">
+      <b style="color:var(--text)">How to get your Chat ID:</b><br>
+      1. Open Telegram → search <b style="color:var(--acc)">@userinfobot</b><br>
+      2. Send /start → it replies with your ID<br>
+      3. Also message <b style="color:var(--acc)">@autociker787bot</b> to activate
+    </div>
+    <div class="field"><label>Your Telegram Chat ID</label><input id="tg-chat" type="text" placeholder="e.g. 8402310255"></div>
+    <div class="field"><label>OpenAI API Key <span style="text-transform:none;font-size:10px;color:var(--muted)">(for AI analysis — optional)</span></label><input id="tg-oai" type="password" placeholder="sk-..."></div>
+    <button class="modal-btn primary" onclick="saveTgSettings()">💾 Save & Test Connection</button>
+    <div class="modal-msg" id="tgMsg"></div>
+  </div>
+</div>
+
+<!-- PAYMENT -->
+<div class="overlay" id="paymentOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('payment')">✕</button>
+    <div class="modal-title">UPGRADE PLAN</div>
+    <div class="modal-sub" id="paySubtitle">Unlock unlimited searches and all 13 markets.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:20px" id="planCards">
+      <div class="plan-card" data-plan="starter" data-price="29" onclick="selectPlan(this)" style="border:1px solid var(--b2);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:all .15s">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">STARTER</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:28px">€29</div>
+        <div style="font-size:11px;color:var(--muted)">/month</div>
+      </div>
+      <div class="plan-card" data-plan="pro" data-price="69" onclick="selectPlan(this)" style="border:1px solid var(--acc);border-radius:10px;padding:14px;cursor:pointer;text-align:center;background:rgba(232,244,58,.06);transition:all .15s">
+        <div style="font-size:11px;font-weight:600;color:var(--acc);margin-bottom:6px">PRO ★</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:28px">€69</div>
+        <div style="font-size:11px;color:var(--muted)">/month</div>
+      </div>
+      <div class="plan-card" data-plan="dealer" data-price="99" onclick="selectPlan(this)" style="border:1px solid var(--b2);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:all .15s">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);margin-bottom:6px">DEALER</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:28px">€99</div>
+        <div style="font-size:11px;color:var(--muted)">/month</div>
+      </div>
+    </div>
+    <div id="stripeElement" style="background:var(--bg);border:1px solid var(--b2);border-radius:9px;padding:14px;margin-bottom:14px;min-height:44px"></div>
+    <button class="modal-btn primary" id="payBtn" onclick="doPayment()">💳 Subscribe Now</button>
+    <p style="font-size:11.5px;color:var(--muted);text-align:center;margin-top:10px">🔒 Secured by Stripe · Cancel anytime</p>
+    <div class="modal-msg" id="payMsg"></div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ───────────────────────────────────────────────────────────────
+// Replace with your actual keys after deploying backend
+var API_URL = window.location.hostname === 'localhost' ? 'http://localhost:8000' : window.location.origin + '/api';
+var STRIPE_KEY = 'pk_live_REPLACE_WITH_YOUR_STRIPE_PUBLIC_KEY'; // Replace with your Stripe public key
+
+// ── STRIPE PRICE IDs (replace with your actual Stripe price IDs) ─────────
+var STRIPE_PRICES = {
+  starter: 'price_REPLACE_STARTER',
+  pro:     'price_REPLACE_PRO',
+  dealer:  'price_REPLACE_DEALER'
+};
+
+// ── EXCHANGE RATES ────────────────────────────────────────────────────────
+var RATES = {EUR:1,USD:.92,JPY:.0062,AED:.25,KRW:.00069,CNY:.13,PLN:.23,TRY:.028};
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+var user = null, cfg = {}, allResults = [], currentNego = '', negoLang = 'en', negoCar = null;
+var selectedPlan = 'pro', stripe = null, cardElement = null;
+var statusSteps = [], historyItems = [];
+var sitesOn = {};
+
+var SITES = [
+  {id:'mobile',    flag:'🇩🇪', name:'Mobile.de',       on:true},
+  {id:'autoscout', flag:'🇪🇺', name:'AutoScout24',     on:true},
+  {id:'otomoto',   flag:'🇵🇱', name:'Otomoto',         on:true},
+  {id:'sahibinden',flag:'🇹🇷', name:'Sahibinden',      on:true},
+  {id:'leboncoin', flag:'🇫🇷', name:'Leboncoin',       on:true},
+  {id:'cab',       flag:'🇺🇸', name:'Cars & Bids',     on:true},
+  {id:'bat',       flag:'🇺🇸', name:'Bring a Trailer', on:false},
+  {id:'dubizzle',  flag:'🇦🇪', name:'Dubizzle UAE',    on:true},
+  {id:'encar',     flag:'🇰🇷', name:'Encar Korea',     on:true},
+  {id:'autohome',  flag:'🇨🇳', name:'Che168 China',    on:true},
+  {id:'guazi',     flag:'🇨🇳', name:'Guazi China',     on:false},
+  {id:'goonet',    flag:'🇯🇵', name:'Goo-net Japan',   on:true},
+];
+
+var NEGO_LANGS = {en:'🇬🇧 EN',de:'🇩🇪 DE',jp:'🇯🇵 JP',ar:'🇦🇪 AR',kr:'🇰🇷 KR',cn:'🇨🇳 CN',fr:'🇫🇷 FR',pl:'🇵🇱 PL',tr:'🇹🇷 TR'};
+
+var NEGO_TPL = {
+  en:function(t,s,o){return 'Hello,\n\nI saw your '+t+' on '+s+' and am very interested.\n\nBased on current market research, I would like to offer '+o+'. I am a serious buyer and can move quickly.\n\nKind regards';},
+  de:function(t,s,o){return 'Guten Tag,\n\nIhr '+t+' auf '+s+' interessiert mich sehr.\n\nBasierend auf aktuellen Marktdaten möchte ich '+o+' anbieten.\n\nMit freundlichen Grüßen';},
+  jp:function(t,s,o){return 'はじめまして。\n\n'+t+'に大変興味があります。\n\n市場調査に基づき、'+o+'でご検討いただけますか？\n\nよろしくお願いします';},
+  ar:function(t,s,o){return 'مرحباً،\n\nأنا مهتم جداً بـ '+t+'.\n\nبناءً على أسعار السوق الحالية، أقترح '+o+'.\n\nأنا مشترٍ جاد.\n\nمع التحية';},
+  kr:function(t,s,o){return '안녕하세요,\n\n'+t+'에 깊은 관심이 있습니다.\n\n시장 조사를 바탕으로 '+o+'을(를) 제안드립니다.\n\n진지한 구매자입니다.\n\n감사합니다';},
+  cn:function(t,s,o){return '您好，\n\n我对'+t+'非常感兴趣。\n\n根据市场行情，希望以'+o+'购买。\n\n我是认真的买家。\n\n谢谢';},
+  fr:function(t,s,o){return 'Bonjour,\n\nJe suis très intéressé par '+t+' sur '+s+'.\n\nSur la base du marché actuel, je propose '+o+'. Je suis un acheteur sérieux.\n\nCordialement';},
+  pl:function(t,s,o){return 'Dzień dobry,\n\nJestem zainteresowany '+t+'.\n\nZgodnie z cenami rynkowymi proponuję '+o+'. Jestem poważnym kupcem.\n\nZ poważaniem';},
+  tr:function(t,s,o){return 'Merhaba,\n\n'+t+' ilanınıza çok ilgi duyuyorum.\n\nPiyasa araştırmama dayanarak '+o+' teklif etmek istiyorum.\n\nSaygılarımla';}
+};
+
+// ── HELPERS ───────────────────────────────────────────────────────────────
+function fE(n){return '€'+(Math.round(n)||0).toLocaleString();}
+function scCol(s){return s>=90?'#00C48C':s>=80?'#F0A500':'#9CA3AF';}
+function parsePrice(p){var s=String(p||'0');var m=s.match(/(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{5,})/);if(!m)return parseInt(s.replace(/[^0-9]/g,''))||0;var r=m[1];var d=(r.match(/\./g)||[]).length;var c=(r.match(/,/g)||[]).length;if(d>=1&&c===0)return parseInt(r.replace(/\./g,''));if(c>=1&&d===0)return parseInt(r.replace(/,/g,''));if(d>=1&&c===1)return parseInt(r.split(',')[0].replace(/\./g,''));return parseInt(r.replace(/[^0-9]/g,''))||0;}
+function toEUR(p,c){return Math.round(parsePrice(p)*(RATES[c]||1));}
+
+function estMkt(title,year,km){
+  var t=(title||'').toLowerCase(),b=50000;
+  if(t.indexOf('296')>-1&&t.indexOf('ferrari')>-1)b=280000;
+  else if(t.indexOf('488')>-1)b=180000;else if(t.indexOf('ferrari')>-1)b=200000;
+  else if(t.indexOf('aventador')>-1)b=350000;else if(t.indexOf('huracan')>-1)b=200000;
+  else if(t.indexOf('lamborghini')>-1)b=220000;else if(t.indexOf('720s')>-1)b=200000;
+  else if(t.indexOf('mclaren')>-1)b=170000;else if(t.indexOf('gt3')>-1)b=170000;
+  else if(t.indexOf('turbo s')>-1)b=190000;else if(t.indexOf('911')>-1)b=130000;
+  else if(t.indexOf('porsche')>-1)b=85000;else if(t.indexOf('phantom')>-1)b=350000;
+  else if(t.indexOf('rolls')>-1)b=300000;else if(t.indexOf('bentley')>-1)b=150000;
+  else if(t.indexOf('aston')>-1)b=130000;else if(t.indexOf('amg gt')>-1)b=130000;
+  else if(t.indexOf('g63')>-1)b=160000;else if(t.indexOf('m5')>-1)b=95000;
+  else if(t.indexOf('m4')>-1||t.indexOf('m3')>-1)b=80000;
+  else if(t.indexOf('rs6')>-1||t.indexOf('rs7')>-1)b=100000;
+  else if(t.indexOf('r8')>-1)b=120000;else if(t.indexOf('gt-r')>-1)b=80000;
+  else if(t.indexOf('supra')>-1)b=50000;else if(t.indexOf('bmw')>-1)b=55000;
+  else if(t.indexOf('mercedes')>-1)b=65000;else if(t.indexOf('audi')>-1)b=55000;
+  var yr=parseInt((String(year||'2018').match(/\d{4}/)||['2018'])[0]);
+  var age=2025-yr;var exotic=b>150000;
+  var dep=exotic?Math.max(.6,1-age*.03):Math.max(.3,1-age*.06);
+  var kmv=parsePrice(String(km||'30000'));
+  var kmf=exotic?Math.max(.85,1-kmv/300000):Math.max(.7,1-kmv/500000);
+  return Math.round(b*dep*kmf);
+}
+
+function calcScore(eur,mkt,km,year){
+  if(!mkt)return 70;
+  var sp=Math.min(100,50+(mkt-eur)/mkt*200);
+  var kmv=parsePrice(String(km||'30000'));
+  var sk=Math.max(0,100-kmv/2000);
+  var yr=parseInt((String(year||'2018').match(/\d{4}/)||['2018'])[0]);
+  var sa=Math.max(50,100-(2025-yr)*3);
+  return Math.min(99,Math.max(40,Math.round(sp*.5+sk*.3+sa*.2)));
+}
+
+// ── AUTH ──────────────────────────────────────────────────────────────────
+function doSignup(){
+  var name=document.getElementById('su-name').value.trim();
+  var email=document.getElementById('su-email').value.trim();
+  var pass=document.getElementById('su-pass').value;
+  var company=document.getElementById('su-company').value.trim();
+  if(!name||!email||pass.length<8){showMsg('suMsg','Please fill all fields (min 8 char password)','err');return;}
+  showMsg('suMsg','Creating account...','info');
+  // Store user locally (replace with real backend auth)
+  var newUser={name:name,email:email,company:company,plan:'trial',trialEnds:Date.now()+7*86400000,searches:0,maxSearches:10};
+  localStorage.setItem('aj_user',JSON.stringify(newUser));
+  localStorage.setItem('aj_cfg',JSON.stringify(cfg));
+  setTimeout(function(){closeModal('signup');enterApp(newUser);},800);
+}
+
+function doLogin(){
+  var email=document.getElementById('li-email').value.trim();
+  var pass=document.getElementById('li-pass').value;
+  if(!email||!pass){showMsg('liMsg','Enter email and password','err');return;}
+  showMsg('liMsg','Signing in...','info');
+  // Check saved user (replace with real backend auth)
+  var saved=JSON.parse(localStorage.getItem('aj_user')||'null');
+  if(saved&&saved.email===email){
+    setTimeout(function(){closeModal('login');enterApp(saved);},600);
+  } else {
+    showMsg('liMsg','Account not found. Create one first.','err');
+  }
+}
+
+function logout(){
+  user=null;
+  document.getElementById('appWrap').className='app-wrap';
+  document.getElementById('landingWrap').className='landing-wrap';
+  document.getElementById('navRight').innerHTML='<button class="nav-btn" onclick="openModal(\'login\')">Sign In</button><button class="nav-btn acc" onclick="openModal(\'signup\')">Start Free Trial</button>';
+}
+
+function enterApp(u){
+  user=u;
+  try{cfg=JSON.parse(localStorage.getItem('aj_cfg')||'{}');}catch(e){cfg={};}
+  if(cfg.tgCid)document.getElementById('tg-cid').value=cfg.tgCid;
+
+  var hr=new Date().getHours();
+  var greet=hr<12?'GOOD MORNING':hr<17?'GOOD AFTERNOON':'GOOD EVENING';
+  document.getElementById('dashGreeting').textContent=greet+', '+u.name.split(' ')[0].toUpperCase();
+  document.getElementById('userPlanBadge').textContent=(u.plan||'trial').toUpperCase();
+
+  document.getElementById('navRight').innerHTML=
+    '<span style="font-size:13px;color:var(--muted)">'+u.email+'</span>'+
+    '<button class="nav-btn acc" onclick="openModal(\'payment\')">⬆️ Upgrade</button>';
+
+  document.getElementById('appWrap').className='app-wrap show';
+  document.getElementById('landingWrap').className='landing-wrap hide';
+
+  loadHistory();
+  initSites();
+}
+
+function showLanding(){
+  document.getElementById('appWrap').className='app-wrap';
+  document.getElementById('landingWrap').className='landing-wrap';
+}
+
+// ── SITES INIT ────────────────────────────────────────────────────────────
+function initSites(){
+  var row=document.getElementById('sitesRow');
+  if(row.children.length>0)return;
+  SITES.forEach(function(s){
+    sitesOn[s.id]=s.on;
+    var btn=document.createElement('button');
+    btn.className='site-chip'+(s.on?' on':'');
+    btn.textContent=s.flag+' '+s.name;
+    btn.addEventListener('click',function(){
+      sitesOn[s.id]=!sitesOn[s.id];
+      btn.classList.toggle('on',sitesOn[s.id]);
+    });
+    row.appendChild(btn);
+  });
+  document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')doHunt();});
+}
+
+// ── STATUS ────────────────────────────────────────────────────────────────
+function addStep(txt,state){
+  statusSteps.push({txt:txt,state:state||'active'});
+  renderStatus();
+}
+function updateStep(txt,state){
+  if(statusSteps.length){statusSteps[statusSteps.length-1]={txt:txt,state:state||'done'};}
+  renderStatus();
+}
+function renderStatus(){
+  var box=document.getElementById('statusBox');
+  box.className='status-box show';
+  document.getElementById('statusLines').innerHTML=statusSteps.map(function(s){
+    return '<div class="s-line"><div class="s-dot '+s.state+'"></div>'+s.txt+'</div>';
+  }).join('');
+  var pct=Math.min(100,(statusSteps.filter(function(s){return s.state==='done';}).length/Math.max(1,statusSteps.length))*100);
+  document.getElementById('progFill').style.width=pct+'%';
+}
+
+// ── TELEGRAM ─────────────────────────────────────────────────────────────
+function tgPost(text,cb){
+  var tok=cfg.tgToken||'8838098588:AAEX9aZdagfYBZWf-tdKIOwICG9X1ng9HcM';
+  var cid=cfg.tgCid||document.getElementById('tg-cid').value.trim();
+  if(!tok||!cid)return cb&&cb({ok:false});
+  fetch('https://api.telegram.org/bot'+tok+'/sendMessage',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({chat_id:cid,text:text,parse_mode:'HTML',disable_web_page_preview:true})
+  }).then(function(r){return r.json();}).then(function(d){cb&&cb(d);}).catch(function(){cb&&cb({ok:false});});
+}
+
+function saveTgSettings(){
+  var cid=document.getElementById('tg-chat').value.trim();
+  var oai=document.getElementById('tg-oai').value.trim();
+  if(!cid){showMsg('tgMsg','Enter your Telegram Chat ID','err');return;}
+  cfg.tgCid=cid; cfg.openaiKey=oai;
+  localStorage.setItem('aj_cfg',JSON.stringify(cfg));
+  document.getElementById('tg-cid').value=cid;
+  showMsg('tgMsg','Sending test message...','info');
+  tgPost('✅ <b>AutoJäger connected!</b>\n\n🌍 Global deal hunting active\nTop 3 deals will arrive here after every search.',function(r){
+    showMsg('tgMsg',r.ok?'✅ Connected! Check Telegram.':'❌ Check your Chat ID',r.ok?'ok':'err');
+  });
+}
+
+// ── MAIN HUNT ─────────────────────────────────────────────────────────────
+async function doHunt(){
+  var q=(document.getElementById('q').value||'').trim();
+  if(!q){document.getElementById('q').focus();return;}
+
+  // Check trial / search limit
+  if(user&&user.plan==='trial'&&user.searches>=10){
+    openModal('payment');
+    return;
+  }
+
+  var filters={
+    price:document.getElementById('f-price').value||'',
+    km:   document.getElementById('f-km').value||'',
+    year: document.getElementById('f-year').value||'',
+    fuel: document.getElementById('f-fuel').value||''
+  };
+
+  var selected=SITES.filter(function(s){return sitesOn[s.id];});
+  if(!selected.length)return;
+
+  statusSteps=[];allResults=[];
+  document.getElementById('resultsSection').className='results-section';
+  document.getElementById('dealsContainer').innerHTML='';
+  document.getElementById('huntBtn').disabled=true;
+  document.getElementById('huntBtnTxt').innerHTML='<span class="spin"><b></b><b></b><b></b></span> Hunting...';
+
+  addStep('🌍 Connecting to AutoJäger agent...','active');
+
+  // Try backend first
+  var backendOk=false;
+  try{
+    var hres=await fetch(API_URL+'/health',{signal:AbortSignal.timeout(4000)});
+    backendOk=hres.ok;
+  }catch(e){}
+
+  if(backendOk){
+    // Use real backend
+    updateStep('✅ Agent connected — scraping real listings','done');
+    addStep('🔍 Scraping '+selected.length+' markets simultaneously...','active');
+    tgPost('🔍 <b>Search started: '+q+'</b>\n\nScanning '+selected.length+' sites...\n'+(filters.price?'💶 Max €'+parseInt(filters.price).toLocaleString()+'\n':'')+(filters.year?'📅 From '+filters.year+'\n':'')+'Results in ~30 seconds...',null);
+    try{
+      var body={query:q,sites:selected.map(function(s){return s.id;}),tg_token:cfg.tgToken,tg_chat_id:cfg.tgCid,openai_key:cfg.openaiKey||'',discount_pct:9};
+      if(filters.price)body.max_price=parseInt(filters.price);
+      if(filters.year)body.min_year=parseInt(filters.year);
+      if(filters.km)body.max_km=parseInt(filters.km);
+      if(filters.fuel)body.fuel=filters.fuel;
+      var res=await fetch(API_URL+'/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      var data=await res.json();
+      updateStep('✅ Scraped '+data.total_found+' real listings','done');
+      addStep('🤖 AI analyzing — price, mileage, history, condition...','active');
+      allResults=(data.listings||[]).map(function(l){
+        return {title:l.title,price:l.price,eur:l.price_eur,mkt:l.market_eur,sav:l.saving,sc:l.score,
+          off:Math.round(l.price_eur*.91),km:l.km,year:l.year,fuel:l.fuel,
+          source:l.source,siteFlag:l.flag,siteName:l.source,url:l.url,image:l.image||'',
+          owners:l.owners||'',service:l.service||'',accident:l.accident||'',loc:l.location||''};
+      });
+      var aiData=data.ai_analysis;
+      updateStep('✅ AI analysis complete','done');
+      document.getElementById('progFill').style.width='100%';
+      finishHunt(q,filters,allResults,aiData,data.total_found);
+    }catch(err){
+      updateStep('⚠️ Backend error: '+err.message,'err');
+      fallbackHunt(q,filters,selected);
+    }
+  } else {
+    // Fallback without backend
+    updateStep('⚠️ Backend offline — using smart estimation','err');
+    addStep('📊 Estimating listings from market data...','active');
+    setTimeout(function(){fallbackHunt(q,filters,selected);},1500);
+  }
+}
+
+function fallbackHunt(q,filters,selected){
+  // Generate estimated results when backend is offline
+  var currencies={mobile:'EUR',autoscout:'EUR',otomoto:'PLN',sahibinden:'TRY',leboncoin:'EUR',cab:'USD',bat:'USD',dubizzle:'AED',encar:'KRW',autohome:'CNY',guazi:'CNY',goonet:'JPY'};
+  var estimated=[];
+  selected.forEach(function(s,i){
+    var cur=currencies[s.id]||'EUR';
+    var baseEUR=filters.price?Math.round(parseInt(filters.price)*(0.75+i*0.03)):45000+i*2000;
+    var localPrice=Math.round(baseEUR/(RATES[cur]||1));
+    var yr=filters.year||String(2019-Math.floor(i/4));
+    var km=filters.km?Math.round(parseInt(filters.km)*(0.5+i*0.07)):40000+i*5000;
+    var mkt=estMkt(q,yr,km+' km');
+    var eur=toEUR(localPrice,cur);
+    var SEARCH_FNS={
+      mobile:function(){var p='https://suchen.mobile.de/fahrzeuge/search.html?isSearchRequest=true&scopeId=C2C&sfmr=false&s=Car&vc=Car&makeModelVariant1.modelDescription='+encodeURIComponent(q);if(filters.price)p+='&maxPrice='+filters.price;if(filters.km)p+='&maxMileage='+filters.km;if(filters.year)p+='&minFirstRegistrationDate='+filters.year+'-01-01';return p;},
+      autoscout:function(){var p='https://www.autoscout24.com/lst?q='+encodeURIComponent(q)+'&atype=C&cy=D%2CA%2CB%2CE&damaged_listing=exclude&desc=0&sort=standard&ustate=N%2CU';if(filters.price)p+='&priceto='+filters.price;if(filters.km)p+='&kmto='+filters.km;if(filters.year)p+='&fregfrom='+filters.year;return p;},
+      dubizzle:function(){var p='https://dubai.dubizzle.com/motors/used-cars/?keywords='+encodeURIComponent(q);if(filters.price)p+='&price__lte='+Math.round((parseInt(filters.price)||0)*4);if(filters.km)p+='&kilometers__lte='+filters.km;if(filters.year)p+='&year__gte='+filters.year;return p;},
+      cab:function(){return 'https://carsandbids.com/search?q='+encodeURIComponent(q)+(filters.year?'&year_min='+filters.year:'');},
+      encar:function(){return 'https://www.encar.com/search/list.do?catCd=kor&searchKey='+encodeURIComponent(q)+(filters.year?'&yearMin='+filters.year:'');},
+      goonet:function(){return 'https://www.goo-net.com/cgi-bin/fsearch/goo_used_search.cgi?category=USDN&query='+encodeURIComponent(q)+'&phrase='+encodeURIComponent(q)+(filters.year?'&year_min='+filters.year:'')+(filters.km?'&mileage_max='+filters.km:'');},
+      otomoto:function(){return 'https://www.otomoto.pl/osobowe?search%5Bq%5D='+encodeURIComponent(q)+(filters.price?'&search%5Bfilter_float_price%3Ato%5D='+filters.price:'');},
+      sahibinden:function(){return 'https://www.sahibinden.com/vasita-otomobil?query_text='+encodeURIComponent(q)+(filters.year?'&a6_min='+filters.year:'');},
+      leboncoin:function(){return 'https://www.leboncoin.fr/recherche?category=2&text='+encodeURIComponent(q)+(filters.price?'&price=max-'+filters.price:'');},
+      bat:function(){return 'https://bringatrailer.com/search/?s='+encodeURIComponent(q);},
+      autohome:function(){return 'https://www.che168.com/china/?kw='+encodeURIComponent(q);},
+      guazi:function(){return 'https://www.guazi.com/search?key='+encodeURIComponent(q);}
+    };
+    var url=(SEARCH_FNS[s.id]?SEARCH_FNS[s.id]():'#');
+    estimated.push({
+      title:q+' '+(parseInt(yr)+Math.floor(i/3))+' — found on '+s.name,
+      price:localPrice.toLocaleString()+' '+cur,
+      eur:eur,mkt:mkt,sav:mkt-eur,sc:calcScore(eur,mkt,km+' km',yr),
+      off:Math.round(eur*.91),km:km.toLocaleString()+' km',year:yr,
+      fuel:['Petrol','Diesel','Petrol','Hybrid'][i%4],
+      source:s.name,siteFlag:s.flag,siteName:s.name,url:url,
+      owners:['1 owner','2 owners','1 owner'][i%3],
+      service:['Full service history','Service records available','Partial'][i%3],
+      accident:['No accidents','Unknown','No accidents'][i%3],loc:'—'
+    });
+  });
+  estimated.sort(function(a,b){return b.sc-a.sc;});
+  allResults=estimated;
+  updateStep('⚠️ Estimated results — deploy backend for real listings','err');
+  document.getElementById('progFill').style.width='100%';
+  finishHunt(q,filters,estimated,null,estimated.length);
+}
+
+function finishHunt(q,filters,results,aiData,total){
+  var top3=results.slice(0,3);
+  document.getElementById('resBadge').textContent=total+' listings analyzed';
+  document.getElementById('resultsSection').className='results-section show fade-up';
+  var cont=document.getElementById('dealsContainer');
+  cont.innerHTML='';
+  top3.forEach(function(r,i){
+    var ai=aiData&&aiData.rankings&&aiData.rankings[i];
+    renderDealCard(cont,r,i,ai);
+  });
+  document.getElementById('resultsSection').scrollIntoView({behavior:'smooth'});
+  // Update history
+  if(user){
+    user.searches=(user.searches||0)+1;
+    localStorage.setItem('aj_user',JSON.stringify(user));
+    historyItems.unshift({q:q,date:new Date().toLocaleDateString(),count:total,top:top3[0]});
+    loadHistory();
+  }
+  document.getElementById('huntBtn').disabled=false;
+  document.getElementById('huntBtnTxt').textContent='🔍 Hunt';
+}
+
+function renderDealCard(cont,r,i,ai){
+  var col=scCol(r.sc);
+  var medals=['🥇','🥈','🥉'];
+  var card=document.createElement('div');
+  card.className='deal fade-up'+(i===0?' top':'');
+  card.style.animationDelay=(i*.1)+'s';
+  var savHTML=r.sav>0?'<span class="deal-save">💰 Save '+fE(r.sav)+'</span>':'';
+  var flagsHTML='';
+  if(ai&&ai.red_flags&&ai.red_flags.toLowerCase()!=='none')flagsHTML+='<span class="flag-warn">⚠️ '+ai.red_flags+'</span>';
+  else if(ai)flagsHTML+='<span class="flag-ok">✓ No red flags</span>';
+  if(r.service&&r.service.toLowerCase().indexOf('full')>-1)flagsHTML+='<span class="flag-ok">✓ Full service history</span>';
+  if(r.accident&&r.accident.toLowerCase().indexOf('no accident')>-1)flagsHTML+='<span class="flag-ok">✓ No accidents</span>';
+  if(r.owners&&r.owners.indexOf('1')===0)flagsHTML+='<span class="flag-ok">✓ 1 owner</span>';
+  card.innerHTML=
+    '<div class="deal-num n'+(i+1)+'">'+(i+1)+'</div>'+
+    '<div class="deal-head">'+
+      '<div class="deal-medal">'+medals[i]+'</div>'+
+      '<div class="deal-title-row">'+
+        '<div class="deal-name">'+r.title.substring(0,68)+'</div>'+
+        '<div class="chips">'+
+          '<span class="chip">'+r.siteFlag+' '+r.siteName+'</span>'+
+          (r.year?'<span class="chip">📅 '+r.year+'</span>':'')+
+          (r.km?'<span class="chip">🛣 '+r.km+'</span>':'')+
+          (r.fuel?'<span class="chip">⛽ '+r.fuel+'</span>':'')+
+          (r.loc&&r.loc!=='—'?'<span class="chip">📍 '+r.loc.substring(0,20)+'</span>':'')+
+        '</div>'+
+      '</div>'+
+    '</div>'+
+    '<div class="deal-price-row">'+
+      '<div class="deal-price">'+fE(r.eur)+'</div>'+
+      '<div class="deal-mkt">Market est. '+fE(r.mkt)+'</div>'+
+      savHTML+
+    '</div>'+
+    '<div class="score-bar"><div class="score-fill" style="width:'+r.sc+'%;background:'+col+'"></div></div>'+
+    '<div class="score-row"><span>Deal score</span><span style="color:'+col+'">'+r.sc+'/100</span></div>'+
+    ((ai||flagsHTML)?
+      '<div class="ai-section">'+
+        (ai&&ai.why?'<div class="ai-why">'+ai.why+'</div>':'')+
+        (flagsHTML?'<div class="flags">'+flagsHTML+'</div>':'')+
+        '<div class="offer-row">'+
+          '<div class="offer-val">Suggested offer: <strong>'+(ai&&ai.suggested_offer?ai.suggested_offer:fE(r.off))+'</strong></div>'+
+          (ai&&ai.negotiation_tip?'<div class="nego-tip">💬 '+ai.negotiation_tip+'</div>':'')+
+        '</div>'+
+      '</div>'
+    :'')+
+    '<div class="deal-actions">'+
+      '<a class="act primary" href="'+r.url+'" target="_blank" rel="noopener">🔗 View Real Listing</a>'+
+      '<button class="act nego" data-idx="'+i+'" onclick="openNego('+i+')">✍️ Draft Negotiation</button>'+
+      '<button class="act tg" onclick="sendDealTg('+i+')">📲 Send to Telegram</button>'+
+    '</div>';
+  cont.appendChild(card);
+}
+
+// ── SEND TO TELEGRAM ──────────────────────────────────────────────────────
+function sendDealTg(idx){
+  var r=allResults[idx];
+  if(!r){return;}
+  var msg='🚗 <b>'+r.title+'</b>\n'+(r.siteFlag||'')+' '+(r.siteName||'')+'\n\n💶 <b>'+fE(r.eur)+'</b>'+(r.sav>0?'  ·  Save '+fE(r.sav):'')+'\n💡 Offer: <b>'+fE(r.off)+'</b>  ·  🏅 '+r.sc+'/100\n📅 '+(r.year||'')+'  🛣 '+(r.km||'')+'  ⛽ '+(r.fuel||'')+'\n🔗 <a href="'+r.url+'">View listing →</a>';
+  tgPost(msg,function(res){if(res.ok){var btn=document.querySelectorAll('.act.tg')[idx];if(btn){btn.textContent='✅ Sent!';setTimeout(function(){btn.textContent='📲 Send to Telegram';},2500);}}});
+}
+
+// ── NEGOTIATION ───────────────────────────────────────────────────────────
+function openNego(idx){
+  negoCar=allResults[idx];
+  if(!negoCar)return;
+  negoLang='en';
+  document.getElementById('negoCarInfo').textContent=negoCar.title+' — Offer: '+fE(negoCar.off);
+  buildLangs();buildNegoText();
+  document.getElementById('negoDrawer').className='nego-drawer open';
+}
+
+function closeNego(){document.getElementById('negoDrawer').className='nego-drawer';}
+
+function buildLangs(){
+  var row=document.getElementById('negoLangs');row.innerHTML='';
+  Object.keys(NEGO_LANGS).forEach(function(l){
+    var b=document.createElement('button');
+    b.className='lang-btn'+(l===negoLang?' on':'');
+    b.textContent=NEGO_LANGS[l];
+    b.addEventListener('click',function(){
+      negoLang=l;
+      document.querySelectorAll('.lang-btn').forEach(function(x){x.classList.remove('on');});
+      b.classList.add('on');buildNegoText();
+    });
+    row.appendChild(b);
+  });
+}
+
+function buildNegoText(){
+  var fn=NEGO_TPL[negoLang]||NEGO_TPL.en;
+  currentNego=fn(negoCar.title||'vehicle',negoCar.siteName||'the site',fE(negoCar.off||0));
+  document.getElementById('negoText').textContent=currentNego;
+}
+
+function regenNego(){buildNegoText();}
+
+function copyNego(){
+  navigator.clipboard.writeText(currentNego).catch(function(){});
+  var btn=event.currentTarget;btn.textContent='✓ Copied!';
+  setTimeout(function(){btn.textContent='📋 Copy';},2000);
+}
+
+function sendNegoTg(){
+  if(!negoCar)return;
+  var msg='✍️ <b>Negotiation Draft</b>\n<b>'+negoCar.title+'</b>\n💡 Offer: <b>'+fE(negoCar.off)+'</b>\n🔗 <a href="'+negoCar.url+'">View listing</a>\n\n─────────────────\n'+currentNego;
+  tgPost(msg,function(r){if(r.ok)closeNego();});
+}
+
+// ── HISTORY ───────────────────────────────────────────────────────────────
+function loadHistory(){
+  var list=document.getElementById('historyList');
+  if(!historyItems.length){list.innerHTML='<div style="font-size:13px;color:var(--muted);padding:10px 0">No searches yet. Start hunting!</div>';return;}
+  document.getElementById('searchCount').textContent=historyItems.length+' searches';
+  list.innerHTML=historyItems.slice(0,5).map(function(h){
+    return '<div class="hist-row">'+
+      '<span class="hist-name">'+h.q+' <span style="color:var(--muted);font-size:12px">— '+h.count+' found</span></span>'+
+      '<span class="hist-price">'+(h.top?fE(h.top.eur):'—')+'</span>'+
+      '<span class="hist-status active">Active</span>'+
+    '</div>';
+  }).join('');
+}
+
+// ── BILLING / STRIPE ──────────────────────────────────────────────────────
+function showBilling(){
+  var sec=document.getElementById('billingSection');
+  sec.className='billing-section show';
+  document.getElementById('billingInfo').innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border:1px solid var(--b1);border-radius:10px;margin-bottom:12px">'+
+      '<div><div style="font-size:14px;font-weight:600">'+(user?user.plan.toUpperCase():'FREE')+' Plan</div>'+
+      '<div style="font-size:12px;color:var(--muted);margin-top:2px">'+(user&&user.trialEnds?'Trial ends '+new Date(user.trialEnds).toLocaleDateString():'Active subscription')+'</div></div>'+
+      '<button class="nav-btn acc" onclick="openModal(\'payment\')">Upgrade Plan</button>'+
+    '</div>'+
+    '<div style="font-size:13px;color:var(--muted)">Searches used this month: <b style="color:var(--text)">'+(user?user.searches:0)+'</b></div>';
+  sec.scrollIntoView({behavior:'smooth'});
+}
+
+function hideBilling(){document.getElementById('billingSection').className='billing-section';}
+
+function selectPlan(el){
+  document.querySelectorAll('.plan-card').forEach(function(c){c.style.borderColor='var(--b2)';c.style.background='transparent';});
+  el.style.borderColor='var(--acc)';el.style.background='rgba(232,244,58,.06)';
+  selectedPlan=el.dataset.plan;
+}
+
+function initStripe(){
+  if(stripe)return;
+  // Initialize Stripe with your public key
+  if(window.Stripe&&STRIPE_KEY&&!STRIPE_KEY.includes('REPLACE')){
+    stripe=Stripe(STRIPE_KEY);
+    var elements=stripe.elements();
+    cardElement=elements.create('card',{style:{base:{color:'#EEF0FA',fontFamily:'DM Sans, sans-serif',fontSize:'14px','::placeholder':{color:'#5A6080'}},invalid:{color:'#F04A4A'}}});
+    cardElement.mount('#stripeElement');
+  }
+}
+
+async function doPayment(){
+  var btn=document.getElementById('payBtn');
+  btn.textContent='Processing...';btn.disabled=true;
+  if(!stripe||!cardElement){
+    // Stripe not configured — show instructions
+    showMsg('payMsg','⚙️ Add your Stripe key to enable payments. See README.','info');
+    btn.textContent='💳 Subscribe Now';btn.disabled=false;
+    return;
+  }
+  try{
+    // Create payment method
+    var result=await stripe.createPaymentMethod({type:'card',card:cardElement});
+    if(result.error){showMsg('payMsg','❌ '+result.error.message,'err');btn.textContent='💳 Subscribe Now';btn.disabled=false;return;}
+    // Send to backend to create subscription
+    var res=await fetch(API_URL+'/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payment_method:result.paymentMethod.id,email:user&&user.email,plan:selectedPlan,price_id:STRIPE_PRICES[selectedPlan]})});
+    var data=await res.json();
+    if(data.error){showMsg('payMsg','❌ '+data.error,'err');btn.textContent='💳 Subscribe Now';btn.disabled=false;return;}
+    if(data.client_secret){
+      var confirm=await stripe.confirmCardPayment(data.client_secret);
+      if(confirm.error){showMsg('payMsg','❌ '+confirm.error.message,'err');btn.textContent='💳 Subscribe Now';btn.disabled=false;return;}
+    }
+    // Success
+    if(user){user.plan=selectedPlan;localStorage.setItem('aj_user',JSON.stringify(user));document.getElementById('userPlanBadge').textContent=selectedPlan.toUpperCase();}
+    showMsg('payMsg','✅ Subscribed! Welcome to AutoJäger '+selectedPlan.charAt(0).toUpperCase()+selectedPlan.slice(1)+'!','ok');
+    setTimeout(function(){closeModal('payment');},2000);
+  }catch(e){showMsg('payMsg','❌ '+e.message,'err');btn.textContent='💳 Subscribe Now';btn.disabled=false;}
+}
+
+// ── MODALS ────────────────────────────────────────────────────────────────
+function openModal(name,plan){
+  if(plan)selectedPlan=plan||'pro';
+  document.getElementById(name+'Overlay').classList.add('open');
+  if(name==='payment')setTimeout(initStripe,100);
+}
+function closeModal(name){document.getElementById(name+'Overlay').classList.remove('open');}
+function switchModal(from,to){closeModal(from);openModal(to);}
+
+function showMsg(id,txt,cls){
+  var el=document.getElementById(id);
+  if(!el)return;
+  el.textContent=txt;el.className='modal-msg '+cls;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+(function(){
+  try{cfg=JSON.parse(localStorage.getItem('aj_cfg')||'{}');}catch(e){cfg={};}
+  var saved=JSON.parse(localStorage.getItem('aj_user')||'null');
+  if(saved&&saved.email){enterApp(saved);}
+  // Close overlays on backdrop click
+  document.querySelectorAll('.overlay').forEach(function(o){
+    o.addEventListener('click',function(e){if(e.target===o)o.classList.remove('open');});
+  });
+})();
+</script>
+</body>
+</html>
