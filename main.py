@@ -521,7 +521,7 @@ async def handle_msg(cid,username,name,text):
         await tg(cid,f"👋 Try:\n/search BMW M4\n/search Porsche 911 max:120000 year:2019\n/help",[["🔍 Search","do_search"],["❓ Help","do_help"]])
 
 # ── API ENDPOINTS ──────────────────────────────────────────────────────────
-@app.get("/"); 
+@app.get("/")
 async def root(): return {"status":"AutoJäger v2","bot":"@autociker787bot","website":"https://danterra1.github.io/autojager/"}
 
 @app.get("/health")
