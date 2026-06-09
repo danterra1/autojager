@@ -204,7 +204,7 @@ async def scrape_mobile(client, query, f):
     if f.get("min_year"):  url += "&minFirstRegistrationDate="+str(f["min_year"])+"-01-01"
     try:
         r = await client.get(url, timeout=15)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select("a.result-item, article.result-item, [class*='result-item']")[:5] or soup.select("a[href*='auto-inserat']")[:5]
         results = []
         for card in cards[:3]:
@@ -227,7 +227,7 @@ async def scrape_autoscout(client, query, f):
     if not slugs: url += "&q="+query
     try:
         r = await client.get(url, timeout=15)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select("article[class*='cldt'], [class*='ListItem'], a[href*='/offers/']")[:5]
         results = []
         for card in cards[:3]:
@@ -245,7 +245,7 @@ async def scrape_dubizzle(client, query, f):
     if f.get("min_year"):  url += f"&year__gte={f['min_year']}"
     try:
         r = await client.get(url, timeout=15)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select("[class*='listing'], article, [data-testid*='listing']")[:5]
         results = []
         for card in cards[:3]:
@@ -262,7 +262,7 @@ async def scrape_encar(client, query, f):
     if f.get("max_km"):   url += f"&mileageMax={f['max_km']}"
     try:
         r = await client.get(url, headers={**HEADERS,"Accept-Language":"ko-KR"}, timeout=15)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select(".car-item, [class*='car'], .list-item")[:5]
         results = []
         for card in cards[:3]:
@@ -279,7 +279,7 @@ async def scrape_goonet(client, query, f):
     if f.get("max_km"):   url += f"&mileage_max={f['max_km']}"
     try:
         r = await client.get(url, timeout=15)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select(".carList li, .result-item, [class*='car-item']")[:5]
         results = []
         for card in cards[:3]:
@@ -295,7 +295,7 @@ async def scrape_carsandbids(client, query, f):
     if f.get("min_year"): url += f"&year_min={f['min_year']}&year_max=2026"
     try:
         r = await client.get(url, timeout=15)
-        soup = BeautifulSoup(r.text, "lxml")
+        soup = BeautifulSoup(r.text, "html.parser")
         cards = soup.select(".auction-item, article, [class*='listing']")[:5]
         results = []
         for card in cards[:3]:
