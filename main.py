@@ -965,6 +965,99 @@ async def handle_cb(cid, username, name, cbd, cbid):
             await ask_for_profile(cid); return
         await do_single_contact(cid, car, ai, offer)
 
+
+    # ── IMPORT ARBITRAGE CALLBACKS ────────────────────────────────────────
+    elif cbd.startswith("import_orig_"):
+        await tg_cb(cbid)
+        orig = cbd.split("_")[2]
+        pending = s.get("pending_import", {})
+        if pending.get("query"):
+            await run_import_calc(cid, pending["query"], orig)
+
+    elif cbd.startswith("import_dest_"):
+        await tg_cb(cbid)
+        dest = cbd.split("_")[2]
+        imp = s.get("last_import", {})
+        if imp:
+            await run_import_calc(cid, imp["query"], imp["origin"], dest=dest, car_price=imp["car_price"])
+
+    elif cbd.startswith("import_full_"):
+        await tg_cb(cbid)
+        parts = cbd.split("_", 3)
+        if len(parts) >= 4:
+            orig, query = parts[2], parts[3].replace("_"," ")
+            await run_import_calc(cid, query, orig)
+
+    elif cbd in ("import_search","import_search_now"):
+        await tg_cb(cbid)
+        s["state"] = "awaiting_query"
+        await tg(cid, "🔍 What car to search and import?")
+
+    elif cbd == "import_proceed":
+        await tg_cb(cbid)
+        imp = s.get("last_import", {})
+        if imp:
+            await tg(cid,
+                f"✅ <b>Starting import: {imp['query']}</b>\n\n"
+                f"1. Search listings: /search {imp['query']}\n"
+                f"2. Contact seller → I handle negotiation\n"
+                f"3. Request COC from manufacturer\n"
+                f"4. Book shipping from {imp['origin']}\n"
+                f"5. I generate all paperwork\n\nReady?",
+                [["🔍 Search Now","import_search_now"],["📄 Paperwork","import_paperwork"]]
+            )
+
+    elif cbd == "import_howto":
+        await tg_cb(cbid)
+        await tg(cid,
+            "🛃 <b>Import Arbitrage Guide</b>\n\n"
+            "1️⃣ Find car cheaper abroad\n"
+            "2️⃣ Exact landed cost = shipping + customs + VAT + homologation\n"
+            "3️⃣ Compare to EU price = your profit\n\n"
+            "🇰🇷 Korea: 0% duty (EU-Korea FTA)\n"
+            "🇯🇵 Japan: 0% duty (EU-Japan EPA)\n"
+            "🇦🇪 UAE: 6.5% duty but very cheap stock\n"
+            "🇺🇸 USA: 6.5% duty, good for muscle cars\n\n"
+            "Try: /import BMW M4 from Korea",
+            [["📊 Start Calc","import_search"]]
+        )
+
+    elif cbd == "import_compare":
+        await tg_cb(cbid)
+        imp = s.get("last_import", {})
+        if imp:
+            await handle_import_compare(cid, imp["query"])
+
+    elif cbd == "import_paperwork":
+        await tg_cb(cbid)
+        await tg(cid, "📄 Which document?",
+            [["🛃 Customs declaration","doc_customs"],
+             ["📋 COC request","doc_coc"],
+             ["💶 VAT reclaim","doc_vat"]]
+        )
+
+    elif cbd.startswith("doc_"):
+        await tg_cb(cbid)
+        doc_map = {"doc_customs":"customs_declaration","doc_coc":"coc_request","doc_vat":"vat_reclaim"}
+        doc_type = doc_map.get(cbd, "customs_declaration")
+        imp = s.get("last_import", {})
+        profile = s.get("profile", {})
+        car_info = {"title":imp.get("query",""),"price":imp.get("car_price",0),"origin":imp.get("origin","")}
+        await generate_paperwork(cid, doc_type, car_info, profile)
+
+    elif cbd.startswith("open_encar_"):
+        await tg_cb(cbid)
+        q = cbd[11:].replace("_"," ")
+        link = f"https://www.encar.com/search/list.do?catCd=kor&searchKey={q.replace(' ','+')}"
+        await tg(cid, f"🇰🇷 <b>Encar Korea: {q}</b>\n🔗 <a href=\"{link}\">Search Encar →</a>\n\nFind a car, copy the price, then:\n/import {q} from Korea [PRICE]")
+
+    elif cbd.startswith("open_goonet_"):
+        await tg_cb(cbid)
+        q = cbd[12:].replace("_"," ")
+        link = f"https://www.goo-net.com/cgi-bin/fsearch/goo_used_search.cgi?category=USDN&query={q.replace(' ','+')}"
+        await tg(cid, f"🇯🇵 <b>Goo-net Japan: {q}</b>\n🔗 <a href=\"{link}\">Search Goo-net →</a>\n\nFind a car, copy the price, then:\n/import {q} from Japan [PRICE]")
+
+
     elif cbd == "do_cancel":
         await tg_cb(cbid,"❌"); s["state"]="idle"
         await tg(cid,"Cancelled.",[["🔍 Search","do_search"]])
@@ -1001,12 +1094,554 @@ async def do_single_contact(cid, car, ai, offer):
     buttons += [["💬 Seller Replied","reply_"+did],["📋 All Deals","view_deals"]]
     status_line = "✅ Message sent automatically!" if ok else "📲 Use WhatsApp button to send manually."
     await tg(cid,
-        f"{'✅' if ok else '📲'} <b>{car.get('title','')}</b>\n
-"
+        f"{'✅' if ok else '📲'} <b>{car.get('title','')}</b>\n"
         f"{status_line}\n\nOffer: <b>{offer}</b>\n\n"
         f"Message {FLAGS.get(lang,'')}:\n<code>{msg_text}</code>",
         buttons
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# IMPORT ARBITRAGE MODULE — AutoJäger v7
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── SHIPPING RATES (EUR, port-to-port, updated 2025) ────────────────────────
+SHIPPING_RATES = {
+    # (origin_country, dest_country): EUR
+    ("KR","DE"): 1150, ("KR","NL"): 1100, ("KR","BE"): 1100,
+    ("KR","FR"): 1200, ("KR","PL"): 1250, ("KR","IT"): 1300,
+    ("KR","ES"): 1350, ("KR","EU"): 1200,  # fallback
+    ("JP","DE"): 1400, ("JP","NL"): 1350, ("JP","BE"): 1350,
+    ("JP","FR"): 1450, ("JP","EU"): 1400,
+    ("AE","DE"):  850, ("AE","NL"):  800, ("AE","FR"):  900,
+    ("AE","PL"):  950, ("AE","EU"):  880,
+    ("US","DE"):  950, ("US","NL"):  900, ("US","EU"):  930,
+    ("GB","DE"):  350, ("GB","NL"):  280, ("GB","FR"):  320, ("GB","EU"): 340,
+    ("CN","DE"): 1600, ("CN","NL"): 1550, ("CN","EU"): 1580,
+}
+
+# ── EU CUSTOMS DUTY RATES ──────────────────────────────────────────────────
+# Passenger cars (HS 8703): 6.5% of CIF (cost+insurance+freight)
+# Source: EU Combined Nomenclature
+EU_CUSTOMS_DUTY_PCT = 6.5  # %
+
+# VAT by destination country
+VAT_RATES = {
+    "DE": 19.0, "FR": 20.0, "NL": 21.0, "BE": 21.0, "PL": 23.0,
+    "IT": 22.0, "ES": 21.0, "PT": 23.0, "AT": 20.0, "CH": 7.7,
+    "SE": 25.0, "NO": 25.0, "DK": 25.0, "FI": 24.0, "CZ": 21.0,
+    "RO": 19.0, "HU": 27.0, "SK": 20.0, "HR": 25.0, "BG": 20.0,
+}
+
+# ── REGISTRATION FEES ──────────────────────────────────────────────────────
+REGISTRATION_FEES = {
+    "DE": 150,  "FR": 200, "NL": 650, "BE": 200, "PL": 300,
+    "IT": 350,  "ES": 250, "AT": 200, "CH": 400, "SE": 350,
+    "DK": 800,  "NO": 600, "FI": 400, "CZ": 300, "RO": 200,
+    "EU": 250,  # default
+}
+
+# ── HOMOLOGATION DATABASE ─────────────────────────────────────────────────
+# Key: make_model_pattern (lowercase), value: homologation info
+HOMOLOG_DB = {
+    # Korean cars — generally need individual approval for EU
+    "hyundai genesis":  {"coc":False,"lights":False,"emission":"Euro6","approval":"individual","cost":1800,"time_days":21},
+    "kia stinger":      {"coc":False,"lights":False,"emission":"Euro6","approval":"individual","cost":1800,"time_days":21},
+    "genesis g70":      {"coc":False,"lights":False,"emission":"Euro6","approval":"individual","cost":1800,"time_days":21},
+    "genesis g80":      {"coc":False,"lights":False,"emission":"Euro6","approval":"individual","cost":1800,"time_days":21},
+
+    # Japanese cars — JDM spec often needs conversion
+    "nissan gt-r":      {"coc":False,"lights":True, "emission":"Euro5","approval":"individual","cost":2500,"time_days":30,"note":"Speed limiter removal needed"},
+    "toyota supra":     {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "honda nsx":        {"coc":False,"lights":True, "emission":"Euro5","approval":"individual","cost":3000,"time_days":35},
+    "lexus lfa":        {"coc":False,"lights":True, "emission":"Euro5","approval":"individual","cost":3500,"time_days":40},
+    "mazda rx-7":       {"coc":False,"lights":True, "emission":"Euro3","approval":"individual","cost":3000,"time_days":45,"note":"Emissions may fail — check year"},
+    "toyota land cruiser": {"coc":True,"lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "toyota alphard":   {"coc":False,"lights":True, "emission":"Euro6","approval":"individual","cost":2200,"time_days":25},
+
+    # UAE spec — often same as EU but check AC refrigerant, emissions
+    "mercedes g63":     {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "mercedes amg gt":  {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "porsche 911":      {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "porsche cayenne":  {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "lamborghini huracan": {"coc":True,"lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "ferrari 488":      {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "bmw m4":           {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "bmw m5":           {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "bmw m3":           {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "audi rs6":         {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+    "audi r8":          {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+
+    # US spec — often need headlight conversion, speedometer, mph→km
+    "ford mustang":     {"coc":False,"lights":True, "emission":"EPA","approval":"individual","cost":2800,"time_days":35,"note":"MPH speedo conversion + headlights"},
+    "chevrolet corvette":{"coc":False,"lights":True,"emission":"EPA","approval":"individual","cost":3200,"time_days":40},
+    "dodge challenger": {"coc":False,"lights":True, "emission":"EPA","approval":"individual","cost":2800,"time_days":35},
+    "dodge charger":    {"coc":False,"lights":True, "emission":"EPA","approval":"individual","cost":2800,"time_days":35},
+
+    # Default fallbacks by origin
+    "_korea_default":   {"coc":False,"lights":False,"emission":"Euro6","approval":"individual","cost":1800,"time_days":21},
+    "_japan_default":   {"coc":False,"lights":True, "emission":"varies","approval":"individual","cost":2500,"time_days":30},
+    "_uae_default":     {"coc":True, "lights":False,"emission":"Euro6","approval":"likely_coc","cost":300,"time_days":7,"note":"Verify COC with importer"},
+    "_us_default":      {"coc":False,"lights":True, "emission":"EPA","approval":"individual","cost":3000,"time_days":40},
+    "_eu_default":      {"coc":True, "lights":False,"emission":"Euro6","approval":"coc_available","cost":0,"time_days":0},
+}
+
+ORIGIN_FROM_SOURCE = {
+    "autoscout24": "EU", "mobilede": "DE", "encar": "KR", "goonet": "JP",
+    "dubizzle": "AE", "cab": "US", "bat": "US", "otomoto": "PL",
+    "sahibinden": "TR",
+}
+
+def get_homolog(title, origin):
+    """Match car to homologation database."""
+    tl = title.lower()
+    # Try exact matches first
+    for key, data in HOMOLOG_DB.items():
+        if key.startswith("_"): continue
+        if key in tl:
+            return data
+    # Fallback to origin defaults
+    defaults = {
+        "KR": HOMOLOG_DB["_korea_default"], "JP": HOMOLOG_DB["_japan_default"],
+        "AE": HOMOLOG_DB["_uae_default"],   "US": HOMOLOG_DB["_us_default"],
+        "GB": HOMOLOG_DB["_eu_default"],    "EU": HOMOLOG_DB["_eu_default"],
+        "DE": HOMOLOG_DB["_eu_default"],
+    }
+    return defaults.get(origin, HOMOLOG_DB["_eu_default"])
+
+def calc_import(car_price_eur, origin, dest="DE", car_title=""):
+    """
+    Calculate full landed cost for importing a car.
+    Returns detailed breakdown dict.
+    """
+    dest_cc = dest.upper()[:2]
+    origin_cc = origin.upper()[:2]
+
+    # 1. Shipping
+    shipping = (SHIPPING_RATES.get((origin_cc, dest_cc)) or
+                SHIPPING_RATES.get((origin_cc, "EU")) or 1200)
+
+    # 2. Insurance (0.5% of car value, standard for shipping)
+    insurance = round(car_price_eur * 0.005)
+
+    # 3. CIF = Car + Insurance + Freight (for customs calculation)
+    cif = car_price_eur + insurance + shipping
+
+    # 4. EU Customs duty (6.5% of CIF for passenger cars)
+    # Free Trade Agreement: Korea → EU: 0% since 2016!
+    # Japan → EU: 0% since 2019 (EPA)!
+    # UAE → EU: 6.5%
+    # US → EU: 6.5%
+    fta_zero = {"KR", "JP", "CA", "SG", "VN"}
+    customs_pct = 0.0 if origin_cc in fta_zero else EU_CUSTOMS_DUTY_PCT
+    customs_duty = round(cif * customs_pct / 100)
+
+    # 5. VAT (on car + shipping + insurance + customs duty)
+    vat_pct = VAT_RATES.get(dest_cc, 19.0)
+    vat_base = cif + customs_duty
+    vat = round(vat_base * vat_pct / 100)
+
+    # 6. Registration
+    reg_fee = REGISTRATION_FEES.get(dest_cc, REGISTRATION_FEES["EU"])
+
+    # 7. Homologation
+    homo = get_homolog(car_title, origin_cc)
+    homo_cost = homo.get("cost", 0)
+
+    # 8. Pre-inspection (TÜV/DEKRA — standard for import)
+    inspection = 350
+
+    # 9. Transport within EU (port to dealer)
+    inland_transport = 250
+
+    # Total
+    total_extra = shipping + insurance + customs_duty + vat + reg_fee + homo_cost + inspection + inland_transport
+    landed_cost = car_price_eur + total_extra
+
+    return {
+        "car_price":        car_price_eur,
+        "shipping":         shipping,
+        "insurance":        insurance,
+        "customs_pct":      customs_pct,
+        "customs_duty":     customs_duty,
+        "vat_pct":          vat_pct,
+        "vat":              vat,
+        "registration":     reg_fee,
+        "homologation":     homo_cost,
+        "inspection":       inspection,
+        "inland_transport": inland_transport,
+        "total_extra":      total_extra,
+        "landed_cost":      landed_cost,
+        "homo_info":        homo,
+        "fta_applies":      origin_cc in fta_zero,
+        "origin":           origin_cc,
+        "destination":      dest_cc,
+    }
+
+def format_import_report(car, calc, eu_market_price):
+    """Format a full import analysis report for Telegram."""
+    profit = eu_market_price - calc["landed_cost"]
+    profit_pct = (profit / eu_market_price * 100) if eu_market_price else 0
+    homo = calc["homo_info"]
+
+    flag_map = {"DE":"🇩🇪","KR":"🇰🇷","JP":"🇯🇵","AE":"🇦🇪","US":"🇺🇸","GB":"🇬🇧",
+                "FR":"🇫🇷","PL":"🇵🇱","NL":"🇳🇱","BE":"🇧🇪","IT":"🇮🇹","ES":"🇪🇸"}
+    orig_flag = flag_map.get(calc["origin"],"🌍")
+    dest_flag = flag_map.get(calc["destination"],"🇪🇺")
+
+    fta_note = "✅ 0% duty (Free Trade Agreement)" if calc["fta_applies"] else f"❗ {calc['customs_pct']}% EU customs duty"
+
+    # Homologation summary
+    if homo.get("approval") == "coc_available":
+        homo_line = "✅ COC available — no extra approval needed"
+    elif homo.get("approval") == "likely_coc":
+        homo_line = f"🟡 COC likely available — verify (est. {fe(homo.get('cost',0))} if needed)"
+    else:
+        homo_line = f"⚠️ Individual approval needed — {fe(homo.get('cost',0))}, ~{homo.get('time_days',0)} days"
+        if homo.get("note"):
+            homo_line += f"\n   Note: {homo['note']}"
+
+    lights_note = "⚠️ Headlight conversion required" if homo.get("lights") else "✅ Lights: OK"
+
+    profit_emoji = "🟢" if profit > 5000 else "🟡" if profit > 0 else "🔴"
+
+    report = (
+        f"🛃 <b>Import Analysis: {orig_flag} → {dest_flag}</b>\n"
+        f"<b>{car.get('title','Vehicle')}</b>\n\n"
+        f"<b>💰 Cost Breakdown</b>\n"
+        f"  Car price:           {fe(calc['car_price'])}\n"
+        f"  Shipping:            {fe(calc['shipping'])}\n"
+        f"  Insurance:           {fe(calc['insurance'])}\n"
+        f"  Customs ({calc['customs_pct']}%):      {fe(calc['customs_duty'])}  {fta_note}\n"
+        f"  VAT ({calc['vat_pct']}%):           {fe(calc['vat'])}\n"
+        f"  Homologation:        {fe(calc['homologation'])}\n"
+        f"  Registration:        {fe(calc['registration'])}\n"
+        f"  Inspection:          {fe(calc['inspection'])}\n"
+        f"  Inland transport:    {fe(calc['inland_transport'])}\n"
+        f"  ─────────────────────\n"
+        f"  <b>Total extra:         {fe(calc['total_extra'])}</b>\n"
+        f"  <b>Landed cost:         {fe(calc['landed_cost'])}</b>\n\n"
+        f"<b>📊 Profit Potential</b>\n"
+        f"  EU market price:     {fe(eu_market_price)}\n"
+        f"  Landed cost:         {fe(calc['landed_cost'])}\n"
+        f"  {profit_emoji} <b>Net profit:          {fe(profit)} ({profit_pct:.1f}%)</b>\n\n"
+        f"<b>🔧 Homologation</b>\n"
+        f"  {homo_line}\n"
+        f"  {lights_note}\n"
+        f"  Emission: {homo.get('emission','?')}\n\n"
+        f"<b>⏱ Timeline</b>\n"
+        f"  Shipping:  2-6 weeks\n"
+    )
+    if homo.get("time_days",0) > 0:
+        report += f"  Homologation: ~{homo['time_days']} days\n"
+    report += (
+        f"  Total: ~6-10 weeks\n\n"
+        f"<i>Calculations based on import to {calc['destination']}. "
+        f"VAT is reclaimable if registered as business.</i>"
+    )
+    return report
+
+# ── IMPORT FLOW HANDLERS ──────────────────────────────────────────────────
+
+DEST_COUNTRIES = {
+    "🇩🇪 Germany": "DE", "🇫🇷 France": "FR", "🇳🇱 Netherlands": "NL",
+    "🇧🇪 Belgium": "BE", "🇵🇱 Poland": "PL", "🇮🇹 Italy": "IT",
+    "🇪🇸 Spain": "ES", "🇦🇹 Austria": "AT", "🇨🇭 Switzerland": "CH",
+    "🇸🇪 Sweden": "SE", "🇨🇿 Czech Republic": "CZ",
+}
+
+async def handle_import_command(cid, username, text):
+    """Handle /import command — start import calc flow."""
+    s = get_sess(cid, username)
+    raw = re.sub(r'^/import\s*', '', text, flags=re.I).strip()
+
+    if not raw:
+        await tg(cid,
+            "🛃 <b>Import Arbitrage Calculator</b>\n\n"
+            "Tell me the car and source country, e.g.:\n\n"
+            "• /import BMW M4 from Korea\n"
+            "• /import Nissan GT-R from Japan\n"
+            "• /import Mercedes G63 from UAE\n"
+            "• /import Ford Mustang from USA\n\n"
+            "I'll calculate the exact landed cost, profit potential, "
+            "homologation requirements and full import roadmap.",
+            [["🔍 Search + Import", "import_search"], ["❓ How it works", "import_howto"]]
+        )
+        return
+
+    # Parse origin from text
+    origin_map = {
+        "korea": "KR", "korean": "KR", "encar": "KR",
+        "japan": "JP", "japanese": "JP", "jdm": "JP",
+        "uae": "AE", "dubai": "AE", "abu dhabi": "AE",
+        "usa": "US", "us": "US", "america": "US", "american": "US",
+        "uk": "GB", "england": "GB", "britain": "GB",
+        "china": "CN", "chinese": "CN",
+        "germany": "DE", "german": "DE",
+        "europe": "EU", "european": "EU",
+    }
+    origin = None
+    car_query = raw
+    for word, cc in origin_map.items():
+        if word in raw.lower():
+            origin = cc
+            car_query = re.sub(rf'\bfrom\s+{word}\b|\b{word}\b', '', raw, flags=re.I).strip()
+            break
+
+    if not origin:
+        # Ask for origin
+        s["pending_import"] = {"query": raw}
+        await tg(cid,
+            f"🌍 Where is the <b>{raw}</b> located?",
+            [["🇰🇷 Korea","import_orig_KR"],["🇯🇵 Japan","import_orig_JP"],
+             ["🇦🇪 UAE","import_orig_AE"],["🇺🇸 USA","import_orig_US"],
+             ["🇬🇧 UK","import_orig_GB"],["🇨🇳 China","import_orig_CN"]]
+        )
+        return
+
+    await run_import_calc(cid, car_query, origin)
+
+async def run_import_calc(cid, car_query, origin, dest="DE", car_price=None):
+    """Run full import calculation and send report."""
+    s = get_sess(cid)
+
+    # If we have a real car from search results, use its price
+    # Otherwise use AI to estimate
+    if not car_price:
+        await tg(cid, f"🔍 <i>Analyzing {car_query} from {origin}...</i>")
+
+    # Get AI market estimate if no price
+    if not car_price:
+        ai_est = await ai_import_estimate(car_query, origin)
+        if not ai_est:
+            await tg(cid, "❌ Could not estimate price. Try: /import BMW M4 from Korea 65000")
+            return
+        car_price = ai_est.get("source_price_eur", 0)
+        eu_market  = ai_est.get("eu_market_eur", 0)
+        s["last_import_ai"] = ai_est
+    else:
+        eu_market = 0
+        ai_est = {}
+
+    # If still no EU market price, estimate from homolog db
+    if not eu_market:
+        eu_market = round(car_price * 1.35)  # rough EU premium
+
+    calc = calc_import(car_price, origin, dest, car_query)
+
+    # Store for follow-up
+    s["last_import"] = {
+        "query": car_query, "origin": origin, "dest": dest,
+        "car_price": car_price, "eu_market": eu_market,
+        "calc": calc, "ai": ai_est,
+    }
+
+    car_obj = {"title": car_query}
+    report = format_import_report(car_obj, calc, eu_market)
+
+    await tg(cid, report, [
+        ["🇩🇪 Calc for Germany",  "import_dest_DE"],
+        ["🇳🇱 Calc for Netherlands","import_dest_NL"],
+        ["🇫🇷 Calc for France",   "import_dest_FR"],
+        ["🇵🇱 Calc for Poland",   "import_dest_PL"],
+        ["✅ I want to buy this",  "import_proceed"],
+        ["🔍 Search this car now", "import_search_now"],
+    ])
+
+async def ai_import_estimate(query, origin):
+    """Use AI to estimate car price in source country and EU market price."""
+    origin_names = {"KR":"South Korea","JP":"Japan","AE":"UAE","US":"USA","GB":"UK","CN":"China","DE":"Germany"}
+    prompt = f"""Expert car market analyst. Estimate prices for: {query} from {origin_names.get(origin, origin)}.
+
+Respond ONLY in JSON:
+{{"source_price_eur": 52000, "eu_market_eur": 78000, "price_range_source": "48000-56000", "price_range_eu": "72000-85000", "typical_year": "2020-2022", "typical_km": "30000-60000", "market_notes": "brief note on this car in this market"}}
+
+Source price = typical asking price in {origin_names.get(origin,origin)} converted to EUR.
+EU market price = what this car sells for in Europe today.
+Be accurate — use real market knowledge."""
+
+    try:
+        r = await _ai([{"role":"user","content":prompt}], 300)
+        if r:
+            return json.loads(re.sub(r'```json|```','',r).strip())
+    except Exception as e:
+        print(f"AI import est: {e}")
+    return None
+
+# ── IMPORT COMPARISON: Find best source country ──────────────────────────
+
+async def handle_import_compare(cid, query):
+    """Compare importing same car from multiple countries."""
+    await tg(cid, f"🌍 <i>Comparing import costs for {query} from all markets...</i>")
+
+    origins = ["KR","JP","AE","US"]
+    results = []
+
+    for orig in origins:
+        ai_est = await ai_import_estimate(query, orig)
+        if not ai_est: continue
+        car_price = ai_est.get("source_price_eur", 0)
+        eu_market  = ai_est.get("eu_market_eur", 0)
+        if not car_price: continue
+        calc = calc_import(car_price, orig, "DE", query)
+        profit = eu_market - calc["landed_cost"]
+        results.append({
+            "origin": orig, "car_price": car_price,
+            "landed": calc["landed_cost"], "profit": profit,
+            "calc": calc, "eu_market": eu_market, "ai": ai_est,
+        })
+
+    if not results:
+        await tg(cid, "❌ Could not compare markets. Try a more specific car name.")
+        return
+
+    results.sort(key=lambda x: x["profit"], reverse=True)
+
+    flags = {"KR":"🇰🇷","JP":"🇯🇵","AE":"🇦🇪","US":"🇺🇸"}
+    names = {"KR":"Korea","JP":"Japan","AE":"UAE","US":"USA"}
+
+    msg = f"🌍 <b>Import Comparison: {query}</b>\n"
+    msg += f"Destination: 🇩🇪 Germany\n\n"
+
+    medals = ["🥇","🥈","🥉","4️⃣"]
+    for i, r in enumerate(results[:4]):
+        profit_emoji = "🟢" if r["profit"] > 5000 else "🟡" if r["profit"] > 0 else "🔴"
+        homo = get_homolog(query, r["origin"])
+        fta = "✅ 0% duty" if r["origin"] in ("KR","JP") else f"❗ 6.5% duty"
+        msg += (
+            f"{medals[i]} {flags.get(r['origin'],'🌍')} <b>{names.get(r['origin'],r['origin'])}</b>\n"
+            f"   Source: {fe(r['car_price'])} → Landed: {fe(r['landed'])}\n"
+            f"   {profit_emoji} Profit: <b>{fe(r['profit'])}</b> | {fta}\n"
+            f"   Homolog: {fe(homo.get('cost',0))} ({'COC ok' if homo.get('approval')=='coc_available' else 'Individual approval'})\n\n"
+        )
+
+    best = results[0]
+    msg += f"💡 <b>Best deal: {flags.get(best['origin'],'')}{names.get(best['origin'],'')} at {fe(best['profit'])} profit</b>"
+
+    buttons = [[f"📊 Full {names.get(r['origin'],'')} breakdown", f"import_full_{r['origin']}_{query.replace(' ','_')}"]
+               for r in results[:3]]
+    buttons.append(["🔍 Search in best market", "import_search_best"])
+    await tg(cid, msg, buttons)
+
+# ── PAPERWORK GENERATOR ──────────────────────────────────────────────────
+
+PAPERWORK_TEMPLATES = {
+    "customs_declaration": {
+        "title": "EU Customs Declaration Helper (C88)",
+        "fields": ["importer_name", "importer_address", "vehicle_vin", "vehicle_make_model",
+                   "engine_cc", "year", "purchase_price_eur", "country_of_origin",
+                   "shipping_cost", "invoice_number"],
+        "notes": "Submit at port of entry customs office. Attach invoice + bill of lading.",
+    },
+    "coc_request": {
+        "title": "Certificate of Conformity Request",
+        "fields": ["vehicle_vin", "make", "model", "year", "engine_type",
+                   "your_name", "your_email", "your_address"],
+        "notes": "Send to manufacturer's EU headquarters. BMW: coc@bmwgroup.com, Mercedes: coc-service@mercedes-benz.com, Porsche: coc@porsche.de",
+        "manufacturer_emails": {
+            "bmw": "customercare@bmw.de",
+            "mercedes": "customer.service@mercedes-benz.com",
+            "porsche": "info@porsche.de",
+            "audi": "info@audi.de",
+        }
+    },
+    "vat_reclaim": {
+        "title": "VAT Reclaim (for registered dealers)",
+        "fields": ["business_name", "vat_number", "invoice_date", "seller_name",
+                   "seller_vat", "vehicle_description", "purchase_price_excl_vat", "vat_amount"],
+        "notes": "File with your local tax authority within the same quarter. Keep all original invoices.",
+    },
+}
+
+async def generate_paperwork(cid, doc_type, car_info, buyer_info):
+    """Generate AI-filled paperwork document."""
+    template = PAPERWORK_TEMPLATES.get(doc_type)
+    if not template:
+        await tg(cid, "❌ Unknown document type")
+        return
+
+    prompt = f"""Generate a professional {template['title']} template.
+
+Vehicle: {car_info.get('title','Unknown vehicle')}
+VIN: {car_info.get('vin','[VIN TO BE FILLED]')}
+Year: {car_info.get('year','[YEAR]')}
+Price: {fe(car_info.get('price',0))}
+Origin: {car_info.get('origin','[COUNTRY]')}
+
+Buyer: {buyer_info.get('name','[NAME]')}
+Email: {buyer_info.get('email','[EMAIL]')}
+
+Generate a clean, ready-to-use template with all standard fields. 
+Mark fields needing manual completion with [FILL IN].
+Include the document title, all required fields, and any important notes.
+Keep it professional and complete."""
+
+    doc = await _ai([{"role":"user","content":prompt}], 600)
+    if not doc:
+        doc = f"=== {template['title']} ===\n\n" + "\n".join([f"{f}: [FILL IN]" for f in template["fields"]])
+        doc += f"\n\nNotes: {template['notes']}"
+
+    await tg(cid,
+        f"📄 <b>{template['title']}</b>\n\n<code>{doc[:3000]}</code>\n\n"
+        f"<i>{template.get('notes','')}</i>",
+        [["📋 Copy", "copy_doc"], ["📧 Email to me", "email_doc"]]
+    )
+
+# ── IMPORT SEARCH INTEGRATION ─────────────────────────────────────────────
+
+async def search_with_import_calc(cid, query, filters, dest_country="DE"):
+    """Search for cars and immediately show import cost for each result."""
+    cars_eu, cars_kr = await asyncio.gather(
+        scrape_as24(query, filters, n=3),
+        # For non-EU sources we use the search links (can't scrape directly)
+        asyncio.sleep(0),
+    )
+    cars_eu = cars_eu or []
+
+    if not cars_eu:
+        await tg(cid, f"No listings found for {query}. Try broader search terms.")
+        return
+
+    msg = f"🌍 <b>Search + Import Analysis: {query}</b>\n\n"
+    msg += f"Found {len(cars_eu)} EU listings. Showing import potential from other markets:\n\n"
+
+    for i, car in enumerate(cars_eu[:3]):
+        medals = ["🥇","🥈","🥉"]
+        price = car.get("price", 0)
+        msg += f"{medals[i]} <b>{car.get('title','')[:50]}</b>\n"
+        msg += f"🇪🇺 EU price: {fe(price)} · {car.get('year','')} · {kmf(car.get('km',0))}\n"
+        msg += f"🔗 <a href=\"{car.get('url','')}\">View listing</a>\n\n"
+
+    # Add import opportunity analysis
+    ai_est_kr = await ai_import_estimate(query, "KR")
+    ai_est_jp = await ai_import_estimate(query, "JP")
+
+    if ai_est_kr:
+        calc_kr = calc_import(ai_est_kr.get("source_price_eur",0), "KR", dest_country, query)
+        profit_kr = (cars_eu[0].get("price",0) if cars_eu else 0) - calc_kr["landed_cost"]
+        msg += f"🇰🇷 <b>Korea import opportunity:</b>\n"
+        msg += f"   Source ~{fe(ai_est_kr.get('source_price_eur',0))} → Landed: {fe(calc_kr['landed_cost'])}\n"
+        msg += f"   💰 Potential profit vs EU: <b>{fe(profit_kr)}</b>\n\n"
+
+    if ai_est_jp:
+        calc_jp = calc_import(ai_est_jp.get("source_price_eur",0), "JP", dest_country, query)
+        profit_jp = (cars_eu[0].get("price",0) if cars_eu else 0) - calc_jp["landed_cost"]
+        msg += f"🇯🇵 <b>Japan import opportunity:</b>\n"
+        msg += f"   Source ~{fe(ai_est_jp.get('source_price_eur',0))} → Landed: {fe(calc_jp['landed_cost'])}\n"
+        msg += f"   💰 Potential profit vs EU: <b>{fe(profit_jp)}</b>\n\n"
+
+    get_sess(cid)["last_cars"] = cars_eu
+
+    await tg(cid, msg, [
+        ["📊 Full Korea import calc", "import_full_KR_"+query.replace(" ","_")],
+        ["📊 Full Japan import calc", "import_full_JP_"+query.replace(" ","_")],
+        ["🇰🇷 Search Encar Korea",   "open_encar_"+query.replace(" ","_")],
+        ["🇯🇵 Search Goo-net Japan", "open_goonet_"+query.replace(" ","_")],
+        ["📄 Generate paperwork",     "import_paperwork"],
+        ["✅ Contact EU seller",      "contact_0"],
+    ])
+
+
 
 # ── WEBHOOK ───────────────────────────────────────────────────────────────
 @app.post("/telegram")
