@@ -2295,6 +2295,27 @@ async def wh_info():
     async with httpx.AsyncClient() as c:
         r=await c.get(f"{TG_BASE}/getWebhookInfo"); return r.json()
 
+
+@app.get("/watchlist")
+async def get_watchlist():
+    """Public API endpoint — returns all watchlist listings for the frontend."""
+    listings = list(WATCHLIST.values())
+    available = [l for l in listings if l.get("last_status") == "available"]
+    sold      = [l for l in listings if l.get("last_status") == "sold"]
+    return {
+        "total": len(listings),
+        "available": len(available),
+        "sold": len(sold),
+        "listings": sorted(listings, key=lambda x: x.get("added_ts", 0), reverse=True),
+        "last_checked": max((l.get("last_checked_ts",0) for l in listings), default=0),
+    }
+
+@app.get("/listings")
+async def get_listings_page():
+    """Redirect to the listings page."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("https://danterra1.github.io/autojager/listings.html")
+
 @app.on_event("startup")
 async def startup():
     if not TG_TOKEN: print("⚠️  TG_BOT_TOKEN not set"); return
