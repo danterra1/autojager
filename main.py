@@ -41,6 +41,7 @@ SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT      = int(os.getenv("SMTP_PORT", "587"))
 
 SESSIONS: Dict = {}
+OWNER_CHAT_ID = int(os.getenv("OWNER_CHAT_ID", "8402310255"))
 
 # ── HELPERS ───────────────────────────────────────────────────────────────
 def fe(n):  return f"€{int(n or 0):,}"
@@ -1058,6 +1059,35 @@ async def handle_cb(cid, username, name, cbd, cbid):
         await tg(cid, f"🇯🇵 <b>Goo-net Japan: {q}</b>\n🔗 <a href=\"{link}\">Search Goo-net →</a>\n\nFind a car, copy the price, then:\n/import {q} from Japan [PRICE]")
 
 
+
+    # ── WATCHLIST CALLBACKS ───────────────────────────────────────────────
+    elif cbd == "do_watchlist":
+        await tg_cb(cbid)
+        await handle_watchlist_command(cid, username)
+
+    elif cbd == "watch_check_now":
+        await handle_watch_check_now(cid, cbid)
+
+    elif cbd == "watch_clear_sold":
+        await handle_watch_clear_sold(cid, cbid)
+
+    elif cbd == "watch_report":
+        await tg_cb(cbid)
+        if CHANNEL_IDS:
+            for ch in list(CHANNEL_IDS)[:1]:
+                await send_daily_report(ch)
+        else:
+            await send_daily_report(cid)
+
+    elif cbd == "watchlist_howto":
+        await handle_watchlist_howto(cid, cbid)
+
+    elif cbd.startswith("watch_remove_"):
+        await tg_cb(cbid)
+        lid = cbd[13:]
+        await handle_watch_remove(cid, lid)
+
+
     elif cbd == "do_cancel":
         await tg_cb(cbid,"❌"); s["state"]="idle"
         await tg(cid,"Cancelled.",[["🔍 Search","do_search"]])
@@ -1643,6 +1673,593 @@ async def search_with_import_calc(cid, query, filters, dest_country="DE"):
 
 
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# CHANNEL MONITOR — AutoJäger v8
+# ════════════════════════════════════════════════════════════════════════════
+# How it works:
+# 1. You post cars to your Telegram channel in any format
+# 2. Bot receives every channel post via webhook
+# 3. AI parses the listing: make, model, price, year, km, source, URL
+# 4. Stores all parsed listings in WATCHLIST
+# 5. Every 24h: checks if each listing is still available
+# 6. Posts a daily availability report back to your channel
+# 7. Alerts you immediately when a listing disappears (sold!)
+# ════════════════════════════════════════════════════════════════════════════
+
+import json, re, time, asyncio, httpx
+from typing import Optional
+
+# ── WATCHLIST STORAGE ─────────────────────────────────────────────────────
+# In-memory store: listing_id → listing object
+# Format:
+# {
+#   "id": "wl_1234567",
+#   "title": "BMW M4 Competition 2021",
+#   "price": 78000,
+#   "year": "2021",
+#   "km": 35000,
+#   "url": "https://...",
+#   "source": "mobile.de",
+#   "channel_id": -1001234567890,
+#   "message_id": 42,
+#   "added_ts": 1700000000,
+#   "last_checked_ts": 1700000000,
+#   "last_status": "available",   # available | sold | unknown
+#   "check_count": 5,
+#   "sold_at_ts": None,
+#   "raw_text": "original message text",
+# }
+WATCHLIST = {}          # listing_id → listing
+CHANNEL_IDS = set()     # set of channel_ids we monitor
+NOTIFY_CHAT_IDS = set() # who gets the daily report (owner + subscribed users)
+
+# Owner chat ID — gets all alerts
+OWNER_CHAT_ID = int(os.getenv("OWNER_CHAT_ID", "8402310255"))
+
+# ── LISTING PARSER ────────────────────────────────────────────────────────
+URL_PATTERN = re.compile(
+    r'https?://(?:www\.)?'
+    r'(?:autoscout24|mobile\.de|suchen\.mobile\.de|dubizzle|encar|goo-net|goonet|'
+    r'carsandbids|bringatrailer|otomoto|sahibinden|leboncoin|mobile|autotrader|'
+    r'cars\.com|autotrader\.co\.uk|caranddriver|hemmings|bat\.ms)'
+    r'[^\s\)\]>\"\']+',
+    re.I
+)
+
+PRICE_PATTERN = re.compile(
+    r'(?:€|EUR|euro|USD|\$|AED|KRW|JPY|PLN|TRY|GBP|£)\s*'
+    r'([\d]{3,}[\d.,]*)'
+    r'|'
+    r'([\d]{3,}[\d.,]*)\s*(?:€|EUR|euro|USD|\$|AED|KRW|JPY|PLN|TRY|GBP|£)',
+    re.I
+)
+
+YEAR_PATTERN  = re.compile(r'\b(20[0-2]\d|199\d)\b')
+KM_PATTERN    = re.compile(r'([\d]{1,3}(?:[,.][\d]{3})*(?:[,.][\d]{1,2})?)\s*km', re.I)
+KM_K_PATTERN  = re.compile(r'([\d]+)[kK]\s*km', re.I)
+
+SOURCE_MAP = {
+    "autoscout24": "AutoScout24", "mobile.de": "Mobile.de",
+    "suchen.mobile.de": "Mobile.de", "dubizzle": "Dubizzle UAE",
+    "encar": "Encar Korea", "goo-net": "Goo-net Japan",
+    "goonet": "Goo-net Japan", "carsandbids": "Cars & Bids",
+    "bringatrailer": "Bring a Trailer", "bat.ms": "Bring a Trailer",
+    "otomoto": "Otomoto", "sahibinden": "Sahibinden",
+    "leboncoin": "Leboncoin", "autotrader": "AutoTrader",
+}
+
+def detect_source(url):
+    for domain, name in SOURCE_MAP.items():
+        if domain in url.lower():
+            return name
+    return "Unknown"
+
+def parse_price(text):
+    m = PRICE_PATTERN.search(text)
+    if not m: return 0
+    raw = (m.group(1) or m.group(2) or "0").replace(",","").replace(".","")
+    try:
+        val = int(raw)
+        # Sanity check: car prices 1000–5000000
+        return val if 1000 <= val <= 5_000_000 else 0
+    except: return 0
+
+def parse_km(text):
+    m = KM_K_PATTERN.search(text)
+    if m: return int(m.group(1)) * 1000
+    m = KM_PATTERN.search(text)
+    if m:
+        raw = m.group(1).replace(",","").replace(".","")
+        try: return int(raw)
+        except: return 0
+    return 0
+
+async def ai_parse_listing(text):
+    """Use AI to parse a car listing from channel message."""
+    prompt = f"""Parse this car listing message and extract structured data.
+
+Message:
+\"\"\"{text[:1000]}\"\"\"
+
+Extract: make, model, year, price (number only in EUR or original currency), km (number only), 
+color, fuel type, transmission, seller type (private/dealer), location, any notes.
+
+Respond ONLY in JSON:
+{{"make":"BMW","model":"M4 Competition","year":2021,"price":78000,"currency":"EUR",
+"km":35000,"color":"black","fuel":"petrol","transmission":"automatic",
+"seller_type":"private","location":"Munich, Germany","title":"BMW M4 Competition 2021",
+"notes":"Full service history, no accidents"}}
+
+If a field is unknown, use null. Price must be a number (no symbols)."""
+
+    try:
+        r = await _ai([{"role":"user","content":prompt}], 300)
+        if r:
+            return json.loads(re.sub(r'```json|```','',r).strip())
+    except Exception as e:
+        print(f"AI parse: {e}")
+    return None
+
+def parse_listing_basic(text):
+    """Fast regex-based fallback parser."""
+    urls = URL_PATTERN.findall(text)
+    url = urls[0] if urls else ""
+    price = parse_price(text)
+    km = parse_km(text)
+    years = YEAR_PATTERN.findall(text)
+    year = years[0] if years else ""
+    source = detect_source(url) if url else "Channel"
+    # Try to extract a title from first line
+    first_line = text.strip().split('\n')[0][:100]
+    return {
+        "url": url, "price": price, "km": km,
+        "year": year, "source": source,
+        "title": first_line, "currency": "EUR",
+        "make": None, "model": None, "color": None,
+        "fuel": None, "transmission": None,
+        "seller_type": None, "location": None, "notes": None,
+    }
+
+async def parse_channel_message(text, channel_id, message_id):
+    """Parse a channel post into a watchlist entry."""
+    # Quick check: does it look like a car listing?
+    has_url   = bool(URL_PATTERN.search(text))
+    has_price = bool(PRICE_PATTERN.search(text))
+    has_year  = bool(YEAR_PATTERN.search(text))
+
+    # Need at least 2 of 3 signals to be a listing
+    signals = sum([has_url, has_price, has_year])
+    if signals < 2:
+        return None
+
+    # Try AI parse first, fall back to regex
+    parsed = await ai_parse_listing(text)
+    if not parsed:
+        parsed = parse_listing_basic(text)
+
+    # Merge URL from regex if AI missed it
+    if not parsed.get("url"):
+        urls = URL_PATTERN.findall(text)
+        parsed["url"] = urls[0] if urls else ""
+
+    listing_id = f"wl_{channel_id}_{message_id}"
+    now = int(time.time())
+
+    return {
+        "id":           listing_id,
+        "title":        parsed.get("title") or f"{parsed.get('make','')} {parsed.get('model','')}".strip() or "Vehicle",
+        "make":         parsed.get("make"),
+        "model":        parsed.get("model"),
+        "year":         str(parsed.get("year","")) if parsed.get("year") else "",
+        "price":        parsed.get("price") or 0,
+        "currency":     parsed.get("currency","EUR"),
+        "km":           parsed.get("km") or 0,
+        "color":        parsed.get("color"),
+        "fuel":         parsed.get("fuel"),
+        "transmission": parsed.get("transmission"),
+        "seller_type":  parsed.get("seller_type"),
+        "location":     parsed.get("location"),
+        "notes":        parsed.get("notes"),
+        "url":          parsed.get("url",""),
+        "source":       detect_source(parsed.get("url","")) if parsed.get("url") else "Channel",
+        "channel_id":   channel_id,
+        "message_id":   message_id,
+        "added_ts":     now,
+        "last_checked_ts": now,
+        "last_status":  "available",
+        "check_count":  0,
+        "sold_at_ts":   None,
+        "raw_text":     text[:500],
+    }
+
+# ── AVAILABILITY CHECKER ──────────────────────────────────────────────────
+async def check_listing_available(listing):
+    """Check if a listing URL is still live. Returns (available, status_detail)."""
+    url = listing.get("url","")
+    if not url:
+        return True, "no_url"  # No URL to check, assume available
+
+    try:
+        hdrs = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+        }
+        async with httpx.AsyncClient(headers=hdrs, follow_redirects=True, timeout=15) as c:
+            r = await c.get(url)
+
+            # 404 = definitely gone
+            if r.status_code == 404:
+                return False, "404_not_found"
+
+            # 200 but check content for "sold" signals
+            if r.status_code == 200:
+                text_lower = r.text.lower()
+
+                # AutoScout24 sold signals
+                sold_signals = [
+                    "listing is no longer available",
+                    "dieses inserat ist nicht mehr verfügbar",
+                    "annonce n'est plus disponible",
+                    "this listing has been removed",
+                    "already sold",
+                    "bereits verkauft",
+                    "déjà vendu",
+                    "sold out",
+                    "verkauft",
+                    "404",
+                    "not found",
+                    "no longer active",
+                    "this vehicle has been sold",
+                    "차량이 판매되었습니다",  # Korean: "vehicle has been sold"
+                    "売却済み",  # Japanese: "sold"
+                    "has ended",  # auction ended
+                    "auction ended",
+                    "bidding has closed",
+                ]
+                for sig in sold_signals:
+                    if sig in text_lower:
+                        return False, f"sold_signal:{sig[:30]}"
+
+                # Check title for sold indicators
+                title_match = re.search(r'<title[^>]*>([^<]{5,100})</title>', r.text, re.I)
+                if title_match:
+                    title = title_match.group(1).lower()
+                    if any(s in title for s in ["404","not found","sold","removed","expired","ended"]):
+                        return False, f"title_sold:{title[:40]}"
+
+                return True, "available"
+
+            # Redirected to homepage = likely sold
+            if str(r.url) != url and any(x in str(r.url) for x in ["/home","/search","/lst","/start"]):
+                return False, "redirected_to_home"
+
+            return True, f"http_{r.status_code}"
+
+    except httpx.TimeoutException:
+        return True, "timeout"  # Don't mark as sold on timeout
+    except Exception as e:
+        return True, f"error:{str(e)[:30]}"
+
+async def run_availability_check():
+    """Check all watchlist items. Called every 24h."""
+    if not WATCHLIST:
+        return
+
+    now = int(time.time())
+    newly_sold = []
+    still_available = []
+    unknown = []
+
+    print(f"🔄 Availability check: {len(WATCHLIST)} listings")
+
+    # Check all listings concurrently (max 5 at a time to avoid rate limiting)
+    sem = asyncio.Semaphore(5)
+
+    async def check_one(lid, listing):
+        async with sem:
+            available, detail = await check_listing_available(listing)
+            listing["last_checked_ts"] = now
+            listing["check_count"] = listing.get("check_count",0) + 1
+
+            was_available = listing.get("last_status") != "sold"
+
+            if available:
+                listing["last_status"] = "available"
+                still_available.append(listing)
+            else:
+                listing["last_status"] = "sold"
+                if was_available:
+                    listing["sold_at_ts"] = now
+                    newly_sold.append(listing)
+                else:
+                    newly_sold.append(listing)  # already was sold
+
+            print(f"  {'✅' if available else '❌'} {listing['title'][:40]} → {detail}")
+
+    await asyncio.gather(*[check_one(lid, lst) for lid, lst in list(WATCHLIST.items())])
+
+    return newly_sold, still_available, unknown
+
+async def send_daily_report(channel_id):
+    """Send the daily availability report to the channel."""
+    now = int(time.time())
+    total = len(WATCHLIST)
+    if total == 0:
+        return
+
+    available_list = [l for l in WATCHLIST.values() if l.get("last_status") == "available"]
+    sold_list      = [l for l in WATCHLIST.values() if l.get("last_status") == "sold"]
+    available_count = len(available_list)
+    sold_count      = len(sold_list)
+
+    msg = (
+        f"📊 <b>AutoJäger — Daily Watch Report</b>\n"
+        f"<i>{time.strftime('%d %b %Y, %H:%M UTC', time.gmtime(now))}</i>\n\n"
+        f"📋 Watching: <b>{total} listings</b>\n"
+        f"✅ Available: <b>{available_count}</b>\n"
+        f"❌ Sold/Gone: <b>{sold_count}</b>\n\n"
+    )
+
+    if available_list:
+        msg += "✅ <b>Still Available:</b>\n"
+        for lst in sorted(available_list, key=lambda x: x.get("price",0))[:10]:
+            price_str = fe(lst["price"]) if lst.get("price") else "?"
+            km_str    = f"{lst['km']:,} km" if lst.get("km") else "?"
+            yr_str    = lst.get("year","?")
+            url       = lst.get("url","")
+            title     = lst.get("title","")[:45]
+            age_days  = (now - lst.get("added_ts", now)) // 86400
+            msg += f"  {'🔗 ' if url else ''}{'<a href=\"'+url+'\">'+title+'</a>' if url else title}\n"
+            msg += f"   {price_str} · {yr_str} · {km_str}"
+            if age_days > 0:
+                msg += f" · <i>{age_days}d on watch</i>"
+            msg += "\n"
+        if len(available_list) > 10:
+            msg += f"  <i>...and {len(available_list)-10} more</i>\n"
+        msg += "\n"
+
+    if sold_list:
+        msg += "❌ <b>Sold / Gone:</b>\n"
+        for lst in sold_list[:5]:
+            price_str = fe(lst["price"]) if lst.get("price") else "?"
+            sold_ago  = (now - lst.get("sold_at_ts",now)) // 3600
+            msg += f"  {lst.get('title','')[:45]}\n"
+            msg += f"   {price_str}"
+            if sold_ago < 48:
+                msg += f" · sold ~{sold_ago}h ago"
+            msg += "\n"
+        if len(sold_list) > 5:
+            msg += f"  <i>...and {len(sold_list)-5} more</i>\n"
+
+    msg += "\n<i>Next check in 24h · Reply /watchlist to see full list</i>"
+
+    await tg(channel_id, msg)
+
+async def alert_sold(listing):
+    """Immediately alert when a listing goes sold."""
+    url = listing.get("url","")
+    price_str = fe(listing["price"]) if listing.get("price") else "price unknown"
+    title = listing.get("title","")[:60]
+
+    msg = (
+        f"🔴 <b>SOLD ALERT</b>\n\n"
+        f"<b>{title}</b>\n"
+        f"💶 {price_str}"
+        + (f" · {listing['year']}" if listing.get("year") else "")
+        + (f" · {listing['km']:,} km" if listing.get("km") else "")
+        + "\n"
+        + (f"🔗 <a href=\"{url}\">{listing.get('source','Listing')}</a>\n" if url else "")
+        + f"\n⚠️ This listing is no longer available."
+    )
+
+    # Alert the channel + owner
+    for cid in list(NOTIFY_CHAT_IDS) + [OWNER_CHAT_ID]:
+        await tg(cid, msg)
+
+# ── 24H BACKGROUND TASK ───────────────────────────────────────────────────
+CHECK_INTERVAL = 24 * 60 * 60  # 24 hours in seconds
+
+async def availability_loop():
+    """Background loop — runs forever, checks every 24h."""
+    await asyncio.sleep(60)  # Wait 1 min after startup
+    while True:
+        try:
+            if WATCHLIST:
+                print(f"🔄 Starting 24h availability check ({len(WATCHLIST)} listings)...")
+                result = await run_availability_check()
+                if result:
+                    newly_sold, still_available, unknown = result
+
+                    # Alert on newly sold items
+                    for lst in newly_sold:
+                        if lst.get("sold_at_ts") and (int(time.time()) - lst["sold_at_ts"]) < 86400:
+                            await alert_sold(lst)
+
+                    # Send daily report to all monitored channels
+                    for ch_id in list(CHANNEL_IDS):
+                        await send_daily_report(ch_id)
+
+                    # Also send to owner
+                    if CHANNEL_IDS:
+                        await send_daily_report(OWNER_CHAT_ID)
+
+                print(f"✅ Check complete. Next check in 24h.")
+        except Exception as e:
+            print(f"❌ Availability check error: {e}")
+
+        await asyncio.sleep(CHECK_INTERVAL)
+
+# ── CHANNEL MESSAGE HANDLER ───────────────────────────────────────────────
+async def handle_channel_post(channel_id, message_id, text, caption=""):
+    """Handle incoming channel post — parse and add to watchlist."""
+    full_text = f"{text or ''} {caption or ''}".strip()
+    if not full_text:
+        return
+
+    # Register this channel
+    CHANNEL_IDS.add(channel_id)
+    NOTIFY_CHAT_IDS.add(OWNER_CHAT_ID)
+
+    # Try to parse as listing
+    listing = await parse_channel_message(full_text, channel_id, message_id)
+
+    if listing:
+        WATCHLIST[listing["id"]] = listing
+        print(f"📋 Added to watchlist: {listing['title']} | {fe(listing['price'])} | {listing['url'][:50]}")
+
+        # Confirm to channel
+        price_str = fe(listing["price"]) if listing.get("price") else "price unknown"
+        km_str    = f"{listing['km']:,} km" if listing.get("km") else ""
+        yr_str    = listing.get("year","")
+        title     = listing.get("title","")[:50]
+
+        confirm = (
+            f"👁 <b>Added to watch list</b>\n"
+            f"<b>{title}</b>\n"
+            f"💶 {price_str}"
+            + (f" · {yr_str}" if yr_str else "")
+            + (f" · {km_str}" if km_str else "")
+            + f"\n📊 Watching {len(WATCHLIST)} listings total\n"
+            f"<i>Availability checked every 24h</i>"
+        )
+        await tg(channel_id, confirm)
+    else:
+        # Not a listing — ignore silently (don't spam the channel)
+        pass
+
+# ── WATCHLIST COMMANDS ────────────────────────────────────────────────────
+async def handle_watchlist_command(cid, username):
+    """Show full watchlist to user."""
+    if not WATCHLIST:
+        await tg(cid,
+            "📋 <b>Watchlist is empty</b>\n\n"
+            "Post cars to your channel and I'll track them!\n\n"
+            "I auto-detect listings from any format — just include a URL, price, or year.",
+            [["➕ How to add listings","watchlist_howto"]]
+        )
+        return
+
+    available = [l for l in WATCHLIST.values() if l.get("last_status") != "sold"]
+    sold      = [l for l in WATCHLIST.values() if l.get("last_status") == "sold"]
+    now = int(time.time())
+
+    msg = f"📋 <b>Watchlist ({len(WATCHLIST)} total)</b>\n\n"
+
+    if available:
+        msg += f"✅ <b>Available ({len(available)})</b>\n"
+        for lst in sorted(available, key=lambda x: x.get("added_ts",0), reverse=True)[:8]:
+            age = (now - lst.get("added_ts",now)) // 86400
+            url = lst.get("url","")
+            t   = lst.get("title","")[:40]
+            p   = fe(lst["price"]) if lst.get("price") else "?"
+            checked_ago = (now - lst.get("last_checked_ts",now)) // 3600
+            msg += f"• {'<a href=\"'+url+'\">'+t+'</a>' if url else t}\n"
+            msg += f"  {p}"
+            if lst.get("year"): msg += f" · {lst['year']}"
+            if lst.get("km"):   msg += f" · {lst['km']:,}km"
+            msg += f" · checked {checked_ago}h ago\n"
+
+    if sold:
+        msg += f"\n❌ <b>Sold/Gone ({len(sold)})</b>\n"
+        for lst in sold[:4]:
+            t = lst.get("title","")[:40]
+            p = fe(lst["price"]) if lst.get("price") else "?"
+            msg += f"• {t} — {p}\n"
+
+    last_check = max((l.get("last_checked_ts",0) for l in WATCHLIST.values()), default=0)
+    if last_check:
+        h = (now - last_check) // 3600
+        msg += f"\n<i>Last check: {h}h ago · Next: in {max(0,24-h)}h</i>"
+
+    await tg(cid, msg, [
+        ["🔄 Check Now",    "watch_check_now"],
+        ["🗑 Clear Sold",   "watch_clear_sold"],
+        ["📊 Daily Report", "watch_report"],
+        ["➕ How to Add",   "watchlist_howto"],
+    ])
+
+async def handle_watch_check_now(cid, cbid):
+    """Manual check triggered by user."""
+    await tg_cb(cbid, "🔄 Checking...")
+    if not WATCHLIST:
+        await tg(cid, "📋 Watchlist is empty. Post cars to your channel first!")
+        return
+
+    await tg(cid, f"🔄 <i>Checking {len(WATCHLIST)} listings...</i>")
+    result = await run_availability_check()
+    if not result:
+        await tg(cid, "❌ Check failed. Try again.")
+        return
+
+    newly_sold, still_available, _ = result
+    now = int(time.time())
+
+    msg = f"✅ <b>Check Complete — {len(WATCHLIST)} listings</b>\n\n"
+    msg += f"✅ Available: {len(still_available)}\n"
+    msg += f"❌ Sold/Gone: {len(newly_sold)}\n\n"
+
+    if newly_sold:
+        msg += "🔴 <b>Newly Sold:</b>\n"
+        for lst in newly_sold[:5]:
+            msg += f"• {lst.get('title','')[:40]} — {fe(lst.get('price',0))}\n"
+
+    if still_available:
+        msg += "\n✅ <b>Still Available:</b>\n"
+        for lst in sorted(still_available, key=lambda x: x.get("price",0))[:5]:
+            url = lst.get("url","")
+            t   = lst.get("title","")[:40]
+            p   = fe(lst.get("price",0))
+            msg += f"• {'<a href=\"'+url+'\">'+t+'</a>' if url else t} — {p}\n"
+
+    await tg(cid, msg, [["📋 Full Watchlist","do_watchlist"],["📊 Daily Report","watch_report"]])
+
+    # Alert for newly sold
+    for lst in newly_sold:
+        if lst.get("sold_at_ts") and (now - lst["sold_at_ts"]) < 3600:
+            await alert_sold(lst)
+
+async def handle_watch_clear_sold(cid, cbid):
+    """Remove sold listings from watchlist."""
+    await tg_cb(cbid, "🗑 Clearing...")
+    sold_ids = [lid for lid, l in WATCHLIST.items() if l.get("last_status") == "sold"]
+    for sid in sold_ids:
+        del WATCHLIST[sid]
+    await tg(cid, f"🗑 Cleared {len(sold_ids)} sold listings. {len(WATCHLIST)} remaining.")
+
+async def handle_watch_remove(cid, listing_id):
+    """Remove a specific listing from watchlist."""
+    if listing_id in WATCHLIST:
+        title = WATCHLIST[listing_id].get("title","")
+        del WATCHLIST[listing_id]
+        await tg(cid, f"✅ Removed: {title}\n📋 {len(WATCHLIST)} listings remaining.")
+    else:
+        await tg(cid, "❌ Listing not found.")
+
+async def handle_watchlist_howto(cid, cbid=None):
+    if cbid: await tg_cb(cbid)
+    await tg(cid,
+        "➕ <b>How to Add Cars to Watch List</b>\n\n"
+        "Just post any car listing to your channel — in any format:\n\n"
+        "<b>Option 1: Paste the URL</b>\n"
+        "https://www.autoscout24.com/annonce/...\n\n"
+        "<b>Option 2: Full listing details</b>\n"
+        "BMW M4 Competition 2021\n"
+        "€72,000 · 35,000 km\n"
+        "https://mobile.de/...\n\n"
+        "<b>Option 3: Quick note</b>\n"
+        "Check this M4 — looks cheap!\n"
+        "€68,000 · 2020 · 40k km\n"
+        "https://autoscout24.com/...\n\n"
+        "I auto-detect listings and start watching them. "
+        "Availability is checked every 24h and you get a daily report.\n\n"
+        "✅ Supported sites: Mobile.de, AutoScout24, Dubizzle, Encar, Goo-net, Cars & Bids, Otomoto and more.",
+        [["📋 View Watchlist","do_watchlist"]]
+    )
+
+
+
 # ── WEBHOOK ───────────────────────────────────────────────────────────────
 @app.post("/telegram")
 async def webhook(req: Request, bg: BackgroundTasks):
@@ -1682,12 +2299,15 @@ async def wh_info():
 async def startup():
     if not TG_TOKEN: print("⚠️  TG_BOT_TOKEN not set"); return
     await asyncio.sleep(3)
-    url=os.getenv("RENDER_EXTERNAL_URL","https://autojager.onrender.com")+"/telegram"
+    wh_url=os.getenv("RENDER_EXTERNAL_URL","https://autojager.onrender.com")+"/telegram"
     async with httpx.AsyncClient() as c:
         try:
-            r=await c.post(f"{TG_BASE}/setWebhook",json={"url":url,"drop_pending_updates":True},timeout=10)
+            r=await c.post(f"{TG_BASE}/setWebhook",json={"url":wh_url,"drop_pending_updates":False},timeout=10)
             print(f"Webhook: {r.json()}")
         except Exception as e: print(f"Webhook err: {e}")
+    # Start 24h availability check loop
+    asyncio.create_task(availability_loop())
+    print("✅ 24h availability monitor started")
 
 if __name__=="__main__":
     import uvicorn; uvicorn.run("main:app",host="0.0.0.0",port=8000,reload=True)
