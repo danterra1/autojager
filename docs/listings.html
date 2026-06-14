@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoJäger — Live Listings</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#07080D;--s1:#0D0F18;--s2:#121520;--b1:#1C2035;--b2:#252A3F;
+  --acc:#E8F43A;--acc2:#C8D420;--green:#00C48C;--red:#F04A4A;--gold:#F0A500;
+  --blue:#3D6BF5;--text:#EEF0FA;--muted:#5A6080;--dim:#2A2F45;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:15px;min-height:100vh}
+nav{position:sticky;top:0;z-index:100;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;background:rgba(7,8,13,.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--b1)}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:var(--acc);text-decoration:none;display:flex;align-items:center;gap:8px}
+.logo-dot{width:6px;height:6px;background:var(--acc);border-radius:50%;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.nav-links{display:flex;gap:6px;align-items:center}
+.nav-btn{padding:7px 14px;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;text-decoration:none;transition:all .15s}
+.nav-btn:hover{color:var(--text);background:var(--s1)}
+.nav-btn.active{color:var(--acc);border-color:rgba(232,244,58,.3);background:rgba(232,244,58,.06)}
+
+.page{max-width:1200px;margin:0 auto;padding:28px 20px}
+
+/* HEADER */
+.page-header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.page-title{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:1px}
+.page-sub{font-size:13px;color:var(--muted);margin-top:2px}
+.header-stats{display:flex;gap:12px;flex-wrap:wrap}
+.stat-pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid}
+.stat-pill.green{color:var(--green);border-color:rgba(0,196,140,.3);background:rgba(0,196,140,.08)}
+.stat-pill.red{color:var(--red);border-color:rgba(240,74,74,.3);background:rgba(240,74,74,.08)}
+.stat-pill.blue{color:#7BA3F8;border-color:rgba(61,107,245,.3);background:rgba(61,107,245,.08)}
+
+/* FILTERS */
+.filters-bar{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:7px 14px;border-radius:20px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .12s;white-space:nowrap}
+.filter-btn:hover,.filter-btn.on{background:rgba(232,244,58,.08);border-color:rgba(232,244,58,.3);color:var(--acc)}
+.search-bar{flex:1;min-width:200px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:9px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;outline:none}
+.search-bar:focus{border-color:rgba(232,244,58,.3)}
+.search-bar::placeholder{color:var(--dim)}
+.sort-select{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:9px 14px;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;outline:none;cursor:pointer}
+
+/* GRID */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+
+/* CAR CARD */
+.car-card{background:var(--s1);border:1px solid var(--b2);border-radius:16px;overflow:hidden;transition:border-color .2s,transform .2s;position:relative}
+.car-card:hover{border-color:rgba(232,244,58,.3);transform:translateY(-2px)}
+.car-card.sold{opacity:.55}
+.car-card.sold::after{content:'SOLD';position:absolute;top:12px;right:12px;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:1px}
+.car-card.available::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--acc),transparent)}
+.card-body{padding:18px}
+.card-source{font-size:11px;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between}
+.source-badge{display:flex;align-items:center;gap:5px}
+.age-badge{font-size:11px;color:var(--dim)}
+.card-title{font-size:15px;font-weight:600;line-height:1.35;margin-bottom:10px;color:var(--text)}
+.card-specs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.spec{padding:3px 8px;border-radius:5px;background:var(--s2);border:1px solid var(--b1);font-size:11.5px;color:var(--muted);font-family:'DM Mono',monospace}
+.card-price-row{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.card-price{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:1px;color:var(--text)}
+.card-market{font-size:12px;color:var(--muted)}
+.card-save{font-size:12px;color:var(--green);font-weight:600}
+.card-actions{display:flex;gap:8px}
+.card-btn{flex:1;padding:9px;border-radius:8px;border:1px solid var(--b2);background:transparent;color:var(--muted);font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;text-align:center;text-decoration:none;transition:all .12s;display:flex;align-items:center;justify-content:center;gap:5px}
+.card-btn:hover{background:var(--s2);color:var(--text)}
+.card-btn.primary{background:var(--acc);color:#000;border-color:var(--acc);font-weight:600}
+.card-btn.primary:hover{background:var(--acc2)}
+.card-btn.tg{background:rgba(61,107,245,.1);border-color:rgba(61,107,245,.3);color:#7BA3F8}
+.status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.status-dot.available{background:var(--green);box-shadow:0 0 6px var(--green)}
+.status-dot.sold{background:var(--red)}
+.status-dot.unknown{background:var(--muted)}
+
+/* EMPTY STATE */
+.empty{text-align:center;padding:80px 20px;color:var(--muted)}
+.empty-icon{font-size:48px;margin-bottom:16px;opacity:.4}
+.empty h3{font-size:18px;color:var(--text);margin-bottom:8px}
+.empty p{font-size:14px;line-height:1.7;max-width:400px;margin:0 auto 20px}
+.empty-steps{text-align:left;display:inline-block;background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:20px 24px;font-size:13px;line-height:2}
+
+/* LOADING */
+.loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:40px;color:var(--muted);font-size:14px}
+.spin-dot{width:8px;height:8px;border-radius:50%;background:var(--acc);animation:spin-pulse 1.2s infinite}
+.spin-dot:nth-child(2){animation-delay:.2s}.spin-dot:nth-child(3){animation-delay:.4s}
+@keyframes spin-pulse{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+
+/* LAST UPDATED */
+.last-update{font-size:12px;color:var(--dim);text-align:center;padding:20px 0 8px}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="logo"><div class="logo-dot"></div>AUTOJÄGER</a>
+  <div class="nav-links">
+    <a href="/" class="nav-btn">Home</a>
+    <a href="/listings.html" class="nav-btn active">Live Listings</a>
+    <a href="/#pricing" class="nav-btn">Pricing</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">LIVE LISTINGS</div>
+      <div class="page-sub" id="pageSubtitle">Loading watchlist...</div>
+    </div>
+    <div class="header-stats" id="headerStats"></div>
+  </div>
+
+  <div class="filters-bar">
+    <input class="search-bar" id="searchInput" type="text" placeholder="Search make, model, location...">
+    <button class="filter-btn on" data-filter="all"    onclick="setFilter('all',this)">All</button>
+    <button class="filter-btn"    data-filter="available" onclick="setFilter('available',this)">✅ Available</button>
+    <button class="filter-btn"    data-filter="sold"   onclick="setFilter('sold',this)">❌ Sold</button>
+    <select class="sort-select" id="sortSelect" onchange="renderCards()">
+      <option value="added_desc">Newest first</option>
+      <option value="price_asc">Price: Low → High</option>
+      <option value="price_desc">Price: High → Low</option>
+      <option value="km_asc">Lowest km</option>
+    </select>
+  </div>
+
+  <div id="cardsContainer">
+    <div class="loading">
+      <div class="spin-dot"></div><div class="spin-dot"></div><div class="spin-dot"></div>
+      Fetching live listings...
+    </div>
+  </div>
+
+  <div class="last-update" id="lastUpdate"></div>
+
+</div>
+
+<script>
+const API = 'https://autojager.onrender.com';
+let ALL_LISTINGS = [];
+let currentFilter = 'all';
+
+function fe(n) { return '€' + Math.round(n || 0).toLocaleString(); }
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = Math.floor(Date.now()/1000) - ts;
+  if (diff < 3600)  return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+
+const SOURCE_FLAGS = {
+  'autoscout24':'🇪🇺','mobile.de':'🇩🇪','mobilede':'🇩🇪','dubizzle':'🇦🇪',
+  'encar':'🇰🇷','goo-net':'🇯🇵','goonet':'🇯🇵','cars & bids':'🇺🇸',
+  'bring a trailer':'🇺🇸','otomoto':'🇵🇱','sahibinden':'🇹🇷','channel':'📢',
+};
+function getFlag(source) {
+  const sl = (source||'').toLowerCase();
+  for (const [k,v] of Object.entries(SOURCE_FLAGS)) {
+    if (sl.includes(k)) return v;
+  }
+  return '🌍';
+}
+
+async function fetchListings() {
+  try {
+    const r = await fetch(API + '/watchlist');
+    if (!r.ok) throw new Error('API ' + r.status);
+    const data = await r.json();
+    return data.listings || [];
+  } catch (e) {
+    console.log('API error, using demo data:', e);
+    return getDemoListings();
+  }
+}
+
+function getDemoListings() {
+  // Demo data shown when backend is sleeping / no listings yet
+  return [
+    {id:'demo1',title:'BMW M4 Competition 2021',make:'BMW',model:'M4 Competition',year:'2021',price:72000,km:35000,color:'Black',fuel:'Petrol',transmission:'Automatic',source:'AutoScout24',url:'https://www.autoscout24.com',last_status:'available',added_ts:Math.floor(Date.now()/1000)-86400,last_checked_ts:Math.floor(Date.now()/1000)-3600,location:'Munich, Germany'},
+    {id:'demo2',title:'Porsche 911 GT3 2020',make:'Porsche',model:'911 GT3',year:'2020',price:148000,km:18000,color:'Guards Red',fuel:'Petrol',transmission:'PDK',source:'Mobile.de',url:'https://suchen.mobile.de',last_status:'available',added_ts:Math.floor(Date.now()/1000)-172800,last_checked_ts:Math.floor(Date.now()/1000)-3600,location:'Stuttgart, Germany'},
+    {id:'demo3',title:'Mercedes G63 AMG 2022',make:'Mercedes',model:'G63 AMG',year:'2022',price:189000,km:12000,color:'Obsidian Black',fuel:'Petrol',transmission:'Automatic',source:'Dubizzle UAE',url:'https://dubai.dubizzle.com',last_status:'sold',added_ts:Math.floor(Date.now()/1000)-259200,last_checked_ts:Math.floor(Date.now()/1000)-7200,sold_at_ts:Math.floor(Date.now()/1000)-7200,location:'Dubai, UAE'},
+    {id:'demo4',title:'Lamborghini Huracán EVO 2021',make:'Lamborghini',model:'Huracán EVO',year:'2021',price:215000,km:8500,color:'Grigio Lynx',fuel:'Petrol',transmission:'Automatic',source:'AutoScout24',url:'https://www.autoscout24.com',last_status:'available',added_ts:Math.floor(Date.now()/1000)-43200,last_checked_ts:Math.floor(Date.now()/1000)-3600,location:'Milan, Italy'},
+    {id:'demo5',title:'Nissan GT-R 2019',make:'Nissan',model:'GT-R',year:'2019',price:78000,km:22000,color:'Pearl White',fuel:'Petrol',transmission:'Automatic',source:'Encar Korea',url:'https://www.encar.com',last_status:'available',added_ts:Math.floor(Date.now()/1000)-21600,last_checked_ts:Math.floor(Date.now()/1000)-3600,location:'Seoul, Korea'},
+    {id:'demo6',title:'Ferrari 488 GTB 2018',make:'Ferrari',model:'488 GTB',year:'2018',price:172000,km:28000,color:'Rosso Corsa',fuel:'Petrol',transmission:'Automatic',source:'AutoScout24',url:'https://www.autoscout24.com',last_status:'available',added_ts:Math.floor(Date.now()/1000)-108000,last_checked_ts:Math.floor(Date.now()/1000)-3600,location:'Monaco'},
+  ];
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  renderCards();
+}
+
+function renderCards() {
+  const search = (document.getElementById('searchInput').value || '').toLowerCase();
+  const sort   = document.getElementById('sortSelect').value;
+
+  let list = ALL_LISTINGS.filter(l => {
+    if (currentFilter === 'available' && l.last_status !== 'available') return false;
+    if (currentFilter === 'sold'      && l.last_status === 'available') return false;
+    if (search) {
+      const haystack = [l.title,l.make,l.model,l.location,l.source,l.color,l.year].join(' ').toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  list.sort((a,b) => {
+    if (sort === 'price_asc')  return (a.price||0) - (b.price||0);
+    if (sort === 'price_desc') return (b.price||0) - (a.price||0);
+    if (sort === 'km_asc')     return (a.km||999999) - (b.km||999999);
+    return (b.added_ts||0) - (a.added_ts||0); // newest first
+  });
+
+  const container = document.getElementById('cardsContainer');
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🔍</div>
+        <h3>${currentFilter === 'all' ? 'No listings yet' : 'No ' + currentFilter + ' listings'}</h3>
+        <p>${currentFilter === 'all'
+          ? 'Post cars to your Telegram channel and they\'ll appear here automatically.'
+          : 'Try switching to "All" to see everything.'
+        }</p>
+        ${currentFilter === 'all' ? `
+        <div class="empty-steps">
+          <b>How to add listings:</b><br>
+          1. Add @autociker787bot to your Telegram channel as admin<br>
+          2. Post any car listing with a URL and price<br>
+          3. Bot auto-detects it and adds it here<br>
+          4. Availability checked every 24 hours automatically
+        </div>` : ''}
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `<div class="grid">${list.map(cardHTML).join('')}</div>`;
+}
+
+function cardHTML(l) {
+  const available = l.last_status === 'available';
+  const sold      = l.last_status === 'sold';
+  const flag      = getFlag(l.source);
+  const checkedAgo = timeAgo(l.last_checked_ts);
+  const addedAgo   = timeAgo(l.added_ts);
+  const soldAgo    = l.sold_at_ts ? timeAgo(l.sold_at_ts) : null;
+
+  const specs = [
+    l.year        && `📅 ${l.year}`,
+    l.km          && `🛣 ${l.km.toLocaleString()} km`,
+    l.fuel        && `⛽ ${l.fuel}`,
+    l.transmission && `⚙️ ${l.transmission}`,
+    l.color       && `🎨 ${l.color}`,
+    l.location    && `📍 ${l.location}`,
+  ].filter(Boolean);
+
+  return `
+    <div class="car-card ${available ? 'available' : sold ? 'sold' : ''}">
+      <div class="card-body">
+        <div class="card-source">
+          <span class="source-badge">
+            <span class="status-dot ${l.last_status || 'unknown'}"></span>
+            ${flag} ${l.source || 'Channel'}
+          </span>
+          <span class="age-badge">added ${addedAgo}</span>
+        </div>
+        <div class="card-title">${l.title || 'Vehicle'}</div>
+        <div class="card-specs">
+          ${specs.map(s => `<span class="spec">${s}</span>`).join('')}
+        </div>
+        <div class="card-price-row">
+          <div class="card-price">${l.price ? fe(l.price) : '—'}</div>
+          ${checkedAgo ? `<div class="card-market">checked ${checkedAgo}</div>` : ''}
+          ${soldAgo    ? `<div style="font-size:12px;color:var(--red)">sold ${soldAgo}</div>` : ''}
+        </div>
+        <div class="card-actions">
+          ${l.url ? `<a class="card-btn primary" href="${l.url}" target="_blank" rel="noopener">🔗 View Listing</a>` : ''}
+          <button class="card-btn tg" onclick="openInBot('${encodeURIComponent(l.title||'')}','${encodeURIComponent(l.url||'')}')">🤖 Negotiate</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openInBot(title, url) {
+  // Deep link to bot
+  window.open('https://t.me/autociker787bot?start=nego_' + title, '_blank');
+}
+
+function updateStats() {
+  const available = ALL_LISTINGS.filter(l => l.last_status === 'available').length;
+  const sold      = ALL_LISTINGS.filter(l => l.last_status === 'sold').length;
+  const total     = ALL_LISTINGS.length;
+
+  document.getElementById('headerStats').innerHTML = `
+    <span class="stat-pill green">✅ ${available} Available</span>
+    ${sold ? `<span class="stat-pill red">❌ ${sold} Sold</span>` : ''}
+    <span class="stat-pill blue">📋 ${total} Total</span>
+  `;
+
+  document.getElementById('pageSubtitle').textContent =
+    total === 0
+      ? 'Post cars to your channel to start tracking'
+      : `Tracking ${total} listing${total===1?'':'s'} · availability checked every 24h`;
+}
+
+async function init() {
+  ALL_LISTINGS = await fetchListings();
+
+  const now = new Date();
+  document.getElementById('lastUpdate').textContent =
+    `Last refreshed: ${now.toLocaleTimeString()} · Auto-refreshes every 5 minutes`;
+
+  updateStats();
+  renderCards();
+
+  // Auto-refresh every 5 minutes
+  setInterval(async () => {
+    ALL_LISTINGS = await fetchListings();
+    updateStats();
+    renderCards();
+    document.getElementById('lastUpdate').textContent =
+      `Last refreshed: ${new Date().toLocaleTimeString()} · Auto-refreshes every 5 minutes`;
+  }, 5 * 60 * 1000);
+}
+
+// Search debounce
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderCards, 250);
+});
+
+init();
+</script>
+</body>
+</html>
